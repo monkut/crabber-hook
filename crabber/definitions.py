@@ -21,7 +21,7 @@ class GithubProjectConfig(BaseModel):
 class HookInput(BaseModel):
     session_id: str = Field(alias="session_id")
     cwd: str
-    hook_event_name: str
+    hook_event_name: str = ""
 
 
 class NotificationHookInput(HookInput):

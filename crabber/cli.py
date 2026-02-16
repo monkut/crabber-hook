@@ -1,3 +1,4 @@
+import argparse
 import json
 import logging
 import sys
@@ -8,49 +9,76 @@ from crabber.functions import handle_notification, handle_session_start, handle_
 logger = logging.getLogger(__name__)
 
 
-def dispatch(raw_input: str) -> tuple[str, int]:
-    """Parse stdin JSON and dispatch to the appropriate handler.
-
-    Returns (output, exit_code).
-    """
+def _read_stdin() -> dict | None:
+    """Read and parse JSON from stdin. Returns None on empty or invalid input."""
+    raw_input = sys.stdin.read()
     if not raw_input.strip():
-        logger.debug("Empty stdin, exiting")
-        return "", 0
-
+        logger.debug("Empty stdin")
+        return None
     try:
-        data = json.loads(raw_input)
+        return json.loads(raw_input)
     except json.JSONDecodeError:
         logger.exception("Failed to parse stdin JSON")
-        return "", 1
-
-    hook_event_name = data.get("hook_event_name", "")
-    logger.debug("Received hook event: %s", hook_event_name)
-
-    if hook_event_name == "SessionStart":
-        input_data = HookInput(**data)
-        return handle_session_start(input_data)
-
-    if hook_event_name == "Notification":
-        input_data = NotificationHookInput(**data)
-        return handle_notification(input_data)
-
-    if hook_event_name == "Stop":
-        input_data = StopHookInput(**data)
-        return handle_stop(input_data)
-
-    logger.debug("Unhandled hook event: %s", hook_event_name)
-    return "", 0
+        return None
 
 
-def main() -> None:
-    raw_input = sys.stdin.read()
-    output, exit_code = dispatch(raw_input)
-
+def _run_and_exit(output: str, exit_code: int) -> None:
     if output:
         sys.stdout.write(output)
         sys.stdout.flush()
-
     sys.exit(exit_code)
+
+
+def cmd_session_start(_args: argparse.Namespace) -> None:
+    data = _read_stdin()
+    if data is None:
+        sys.exit(1)
+    input_data = HookInput(**data)
+    output, exit_code = handle_session_start(input_data)
+    _run_and_exit(output, exit_code)
+
+
+def cmd_notification(_args: argparse.Namespace) -> None:
+    data = _read_stdin()
+    if data is None:
+        sys.exit(1)
+    input_data = NotificationHookInput(**data)
+    output, exit_code = handle_notification(input_data)
+    _run_and_exit(output, exit_code)
+
+
+def cmd_stop(_args: argparse.Namespace) -> None:
+    data = _read_stdin()
+    if data is None:
+        sys.exit(1)
+    input_data = StopHookInput(**data)
+    output, exit_code = handle_stop(input_data)
+    _run_and_exit(output, exit_code)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="crabber",
+        description="Claude Code hook dispatcher for GitHub Projects V2",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    sp_session = subparsers.add_parser("session-start", help="Handle SessionStart hook")
+    sp_session.set_defaults(func=cmd_session_start)
+
+    sp_notification = subparsers.add_parser("notification", help="Handle Notification hook")
+    sp_notification.set_defaults(func=cmd_notification)
+
+    sp_stop = subparsers.add_parser("stop", help="Handle Stop hook")
+    sp_stop.set_defaults(func=cmd_stop)
+
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    args.func(args)
 
 
 if __name__ == "__main__":

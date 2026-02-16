@@ -1,94 +1,110 @@
-import json
+from argparse import Namespace
 from unittest import TestCase
 from unittest.mock import patch
 
-from crabber.cli import dispatch
+from crabber.cli import build_parser, cmd_notification, cmd_session_start, cmd_stop
 
 
-class TestDispatch(TestCase):
+class TestBuildParser(TestCase):
+    def test_session_start_command(self):
+        parser = build_parser()
+        args = parser.parse_args(["session-start"])
+        assert args.command == "session-start"
+        assert args.func == cmd_session_start
+
+    def test_notification_command(self):
+        parser = build_parser()
+        args = parser.parse_args(["notification"])
+        assert args.command == "notification"
+        assert args.func == cmd_notification
+
+    def test_stop_command(self):
+        parser = build_parser()
+        args = parser.parse_args(["stop"])
+        assert args.command == "stop"
+        assert args.func == cmd_stop
+
+    def test_no_command_raises(self):
+        parser = build_parser()
+        with self.assertRaises(SystemExit):
+            parser.parse_args([])
+
+
+class TestCmdSessionStart(TestCase):
     @patch("crabber.cli.handle_session_start", return_value=("session output", 0))
-    def test_session_start_dispatch(self, mock_handler):
-        stdin_data = json.dumps(
-            {
-                "hook_event_name": "SessionStart",
-                "session_id": "test-123",
-                "cwd": "/tmp/test",
-            }
-        )
-
-        output, exit_code = dispatch(stdin_data)
+    @patch("crabber.cli._read_stdin", return_value={"session_id": "test-123", "cwd": "/tmp/test"})
+    def test_dispatches_to_handler(self, mock_read, mock_handler):
+        with (
+            patch("sys.stdout") as mock_stdout,
+            self.assertRaises(SystemExit),
+        ):
+            cmd_session_start(Namespace())
 
         mock_handler.assert_called_once()
-        assert output == "session output"
-        assert exit_code == 0
+        mock_stdout.write.assert_called_once_with("session output")
 
-    @patch("crabber.cli.handle_notification", return_value=("", 0))
-    def test_notification_dispatch(self, mock_handler):
-        stdin_data = json.dumps(
-            {
-                "hook_event_name": "Notification",
-                "session_id": "test-123",
-                "cwd": "/tmp/test",
-                "title": "Alert",
-                "message": "Something happened",
-            }
-        )
-
-        output, exit_code = dispatch(stdin_data)
-
-        mock_handler.assert_called_once()
-        assert exit_code == 0
-
-    @patch("crabber.cli.handle_stop", return_value=("", 0))
-    def test_stop_dispatch(self, mock_handler):
-        stdin_data = json.dumps(
-            {
-                "hook_event_name": "Stop",
-                "session_id": "test-123",
-                "cwd": "/tmp/test",
-                "stopReason": "user_request",
-            }
-        )
-
-        output, exit_code = dispatch(stdin_data)
-
-        mock_handler.assert_called_once()
-        assert exit_code == 0
-
-    def test_empty_stdin_returns_zero(self):
-        output, exit_code = dispatch("")
-        assert output == ""
-        assert exit_code == 0
-
-    def test_unknown_hook_returns_zero(self):
-        stdin_data = json.dumps(
-            {
-                "hook_event_name": "UnknownHook",
-                "session_id": "test-123",
-                "cwd": "/tmp/test",
-            }
-        )
-
-        output, exit_code = dispatch(stdin_data)
-
-        assert output == ""
-        assert exit_code == 0
-
-    def test_invalid_json_returns_one(self):
-        output, exit_code = dispatch("not json {")
-        assert exit_code == 1
+    @patch("crabber.cli._read_stdin", return_value=None)
+    def test_empty_stdin_exits_one(self, mock_read):
+        with self.assertRaises(SystemExit) as ctx:
+            cmd_session_start(Namespace())
+        assert ctx.exception.code == 1
 
     @patch("crabber.cli.handle_session_start", return_value=("", 0))
-    def test_no_output_returns_empty(self, mock_handler):
-        stdin_data = json.dumps(
-            {
-                "hook_event_name": "SessionStart",
-                "session_id": "test-123",
-                "cwd": "/tmp/test",
-            }
-        )
+    @patch("crabber.cli._read_stdin", return_value={"session_id": "test-123", "cwd": "/tmp/test"})
+    def test_no_output_doesnt_write(self, mock_read, mock_handler):
+        with (
+            patch("sys.stdout") as mock_stdout,
+            self.assertRaises(SystemExit),
+        ):
+            cmd_session_start(Namespace())
 
-        output, exit_code = dispatch(stdin_data)
+        mock_stdout.write.assert_not_called()
 
-        assert output == ""
-        assert exit_code == 0
+
+class TestCmdNotification(TestCase):
+    @patch("crabber.cli.handle_notification", return_value=("", 0))
+    @patch(
+        "crabber.cli._read_stdin",
+        return_value={
+            "session_id": "test-123",
+            "cwd": "/tmp/test",
+            "title": "Alert",
+            "message": "Something happened",
+        },
+    )
+    def test_dispatches_to_handler(self, mock_read, mock_handler):
+        with self.assertRaises(SystemExit) as ctx:
+            cmd_notification(Namespace())
+
+        mock_handler.assert_called_once()
+        assert ctx.exception.code == 0
+
+    @patch("crabber.cli._read_stdin", return_value=None)
+    def test_empty_stdin_exits_one(self, mock_read):
+        with self.assertRaises(SystemExit) as ctx:
+            cmd_notification(Namespace())
+        assert ctx.exception.code == 1
+
+
+class TestCmdStop(TestCase):
+    @patch("crabber.cli.handle_stop", return_value=("", 0))
+    @patch(
+        "crabber.cli._read_stdin",
+        return_value={
+            "session_id": "test-123",
+            "cwd": "/tmp/test",
+            "stopReason": "user_request",
+        },
+    )
+    def test_dispatches_to_handler(self, mock_read, mock_handler):
+        with self.assertRaises(SystemExit) as ctx:
+            cmd_stop(Namespace())
+
+        mock_handler.assert_called_once()
+        assert ctx.exception.code == 0
+
+    @patch("crabber.cli._read_stdin", return_value=None)
+    def test_empty_stdin_exits_one(self, mock_read):
+        with self.assertRaises(SystemExit) as ctx:
+            cmd_stop(Namespace())
+        assert ctx.exception.code == 1

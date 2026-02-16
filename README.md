@@ -1,94 +1,111 @@
-# crabber README
+# crabber-hook
 
-A set of hooks to automate claude code
+A [Claude Code hook](https://docs.anthropic.com/en/docs/claude-code/hooks) system that connects Claude Code sessions to GitHub Projects V2. It reads JSON from stdin, interacts with the GitHub GraphQL API, and returns context to Claude via stdout.
 
-## 構成
+## How It Works
 
-```
-リポジトリディレクトリ
-| .gitignore
-| .pre-commit-config.yaml
-| Makefile
-| pyproject.toml
-| LICENCE
-| README.md
-|
-└─── .circleci
-|    |   config.yml
-|
-└─── data (データ用ディレクトリ)
-|    .gitkeep
-|
-└─── tests
-|    |   __init__.py
-|    |   test_crabber.py
-|
-└─── crabber
-|    |   __init__.py        
-```
+Crabber provides argparse subcommands for each Claude Code hook event. Each command reads hook JSON from stdin, performs GitHub API operations, and writes context back to stdout.
 
-## Local Development
+### Supported Hooks
 
-Python: 3.14
+- **`session-start`** — On session start, loads `github_project_config.json` from the working directory. If an ongoing issue exists in `CURRENT_PROJECT_STATE.md`, fetches updates and injects the latest comment into Claude's context. If no current issue, picks the top item from the awaiting column.
+- **`notification`** — Posts the notification message and title as a comment on the current GitHub issue.
+- **`stop`** — Posts the stop reason as a comment on the current GitHub issue, then spawns a background process to terminate the parent Claude process after a delay.
 
-> Requires [uv](https://docs.astral.sh/uv/guides/install-python/) for dependency management
+## Setup
 
+### Requirements
 
-### 開発環境のインストール
+- Python 3.14
+- [uv](https://docs.astral.sh/uv/guides/install-python/) for dependency management
+- A `GITHUB_TOKEN` environment variable with access to your GitHub organization's Projects V2
 
-1. `pre-commit` のフックをインストール (_ruff_):
+### Install
 
-    > [pre-commit](https://pre-commit.com/#install) がすでにインストールされていることを前提としています。
-
-    ```bash
-    pre-commit install
-    ```
-
-2. The following command installs project and development dependencies:
-
-    ```bash
-    uv sync 
-    ```
-
-### 新パッケージの追加
-
-パッケージを追加するには、プロジェクトのルートディレクトリから次のコマンドを実行します:
-```
-uv add {PACKAGE TO INSTALL}
+```bash
+uv sync
 ```
 
- ## コードチェックを実行
- 
- ```
- uv run poe check
- ```
+### Project Configuration
 
-タイプチェックを実行：
-```
-uv run poe typecheck
-```
+Place a `github_project_config.json` in your project root:
 
-## テストケースを実行
-
-This project uses [pytest](https://docs.pytest.org/en/latest/contents.html) for running testcases.
-
-テストケースは、`tests` ディレクトリにおいて追加してきます.
-
-テストケースを実行するには、次のコマンドを実行します:
-```
-pytest -v
-# または、親ディレクトリから
-uv run poe test
+```json
+{
+    "project_id": 1,
+    "org_name": "your-org",
+    "assignee": "your-github-username",
+    "awaiting-task-column": "Awaiting",
+    "inprogress-task-column": "In Progress",
+    "in-review-task-column": "In Review"
+}
 ```
 
-## パッケージをビルド
+### Claude Code Hook Configuration
 
-`main`ブランチにブランチがマージされると、パッケージがビルドされて、Githubのリリースにアップロードされます。
+Add the following to your `.claude/hooks.json` (or equivalent):
 
-手動にビルドする場合は、次のコマンドを実行します:
-
-> `dist`ディレクトリにビルドされたパッケージが作成されます。
- 
+```json
+{
+    "hooks": {
+        "SessionStart": [
+            {
+                "command": "python -m crabber.cli session-start"
+            }
+        ],
+        "Notification": [
+            {
+                "command": "python -m crabber.cli notification"
+            }
+        ],
+        "Stop": [
+            {
+                "command": "python -m crabber.cli stop"
+            }
+        ]
+    }
+}
 ```
-uv build
+
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `GITHUB_TOKEN` | Yes | — | GitHub personal access token with project read/write scope |
+| `STOP_SLEEP_SECONDS` | No | `5` | Delay in seconds before killing the parent Claude process on stop |
+| `LOG_LEVEL` | No | `DEBUG` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
+
+### CURRENT_PROJECT_STATE.md
+
+Crabber reads project state from a free-form `CURRENT_PROJECT_STATE.md` file via regex. The following fields are recognized:
+
+```
+LAST_ISSUE_ID = https://github.com/org/repo/issues/123
+LAST_ISSUE_STATE = ON_GOING
+LAST_UPDATED_DATETIME = 2025-01-01T00:00:00Z
+```
+
+`LAST_ISSUE_STATE` values: `ON_GOING`, `COMPLETED`, `PENDING`
+
+### Exit Codes
+
+- **0** — Action proceeds. Stdout content is added to Claude's context.
+- **1** — Error (e.g. missing stdin, invalid JSON).
+- **2** — Action blocked. Stderr is returned to Claude as feedback.
+
+## Development
+
+### Install dev dependencies
+
+```bash
+pre-commit install
+uv sync
+```
+
+### Run checks
+
+```bash
+uv run poe check      # ruff lint
+uv run poe typecheck   # pyright
+uv run poe test        # pytest
 ```
