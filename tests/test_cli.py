@@ -2,7 +2,7 @@ from argparse import Namespace
 from unittest import TestCase
 from unittest.mock import patch
 
-from crabber.cli import build_parser, cmd_notification, cmd_session_start, cmd_stop
+from crabber.cli import build_parser, cmd_init, cmd_notification, cmd_session_start, cmd_stop
 
 
 class TestBuildParser(TestCase):
@@ -23,6 +23,18 @@ class TestBuildParser(TestCase):
         args = parser.parse_args(["stop"])
         assert args.command == "stop"
         assert args.func == cmd_stop
+
+    def test_init_command(self):
+        parser = build_parser()
+        args = parser.parse_args(["init"])
+        assert args.command == "init"
+        assert args.func == cmd_init
+        assert args.output_dir == "."
+
+    def test_init_command_with_output_dir(self):
+        parser = build_parser()
+        args = parser.parse_args(["init", "--output-dir", "/tmp/mydir"])
+        assert args.output_dir == "/tmp/mydir"
 
     def test_no_command_raises(self):
         parser = build_parser()
@@ -108,3 +120,13 @@ class TestCmdStop(TestCase):
         with self.assertRaises(SystemExit) as ctx:
             cmd_stop(Namespace())
         assert ctx.exception.code == 1
+
+
+class TestCmdInit(TestCase):
+    @patch("crabber.cli.handle_init")
+    def test_dispatches_to_handle_init(self, mock_handle_init):
+        args = Namespace(output_dir="/tmp/test")
+        cmd_init(args)
+        mock_handle_init.assert_called_once()
+        call_args = mock_handle_init.call_args[0]
+        assert str(call_args[0]) == "/tmp/test"

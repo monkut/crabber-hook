@@ -1,10 +1,18 @@
+from __future__ import annotations
+
 import argparse
 import json
 import logging
+import os
 import sys
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 from crabber.definitions import HookInput, NotificationHookInput, StopHookInput
-from crabber.functions import handle_notification, handle_session_start, handle_stop
+from crabber.functions import handle_init, handle_notification, handle_session_start, handle_stop
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +64,10 @@ def cmd_stop(_args: argparse.Namespace) -> None:
     _run_and_exit(output, exit_code)
 
 
+def cmd_init(args: argparse.Namespace) -> None:
+    handle_init(Path(args.output_dir))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="crabber",
@@ -72,14 +84,21 @@ def build_parser() -> argparse.ArgumentParser:
     sp_stop = subparsers.add_parser("stop", help="Handle Stop hook")
     sp_stop.set_defaults(func=cmd_stop)
 
+    sp_init = subparsers.add_parser("init", help="Interactively create github_project_config.json")
+    sp_init.add_argument("--output-dir", default=".", help="Directory to write config file (default: cwd)")
+    sp_init.set_defaults(func=cmd_init)
+
     return parser
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.command != "init" and not os.getenv("GITHUB_TOKEN"):
+        parser.error("GITHUB_TOKEN environment variable is required")
     args.func(args)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

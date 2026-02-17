@@ -20,15 +20,46 @@ Crabber provides argparse subcommands for each Claude Code hook event. Each comm
 - [uv](https://docs.astral.sh/uv/guides/install-python/) for dependency management
 - A `GITHUB_TOKEN` environment variable with access to your GitHub organization's Projects V2
 
-### Install
+### Install via uvx (recommended)
+
+Run directly from the repository without a local clone:
+
+```bash
+uvx --from git+https://github.com/kiconiaworks/crabber-hook crabber --help
+```
+
+Use this form in your `.claude/hooks.json` to run hooks without a local install:
+
+```bash
+uvx --from git+https://github.com/kiconiaworks/crabber-hook crabber session-start
+```
+
+### Install from source
 
 ```bash
 uv sync
+
+# Install the `crabber` CLI command (editable/development mode)
+uv pip install -e .
 ```
 
 ### Project Configuration
 
-Place a `github_project_config.json` in your project root:
+Generate a `github_project_config.json` interactively:
+
+```bash
+crabber init
+```
+
+The command prompts for your organization, project ID, assignee, and column names (with sensible defaults). It optionally adds the config file to `.gitignore`.
+
+To write the config to a different directory:
+
+```bash
+crabber init --output-dir path/to/project
+```
+
+Or create the file manually in your project root:
 
 ```json
 {
@@ -50,17 +81,17 @@ Add the following to your `.claude/hooks.json` (or equivalent):
     "hooks": {
         "SessionStart": [
             {
-                "command": "python -m crabber.cli session-start"
+                "command": "crabber session-start"
             }
         ],
         "Notification": [
             {
-                "command": "python -m crabber.cli notification"
+                "command": "crabber notification"
             }
         ],
         "Stop": [
             {
-                "command": "python -m crabber.cli stop"
+                "command": "crabber stop"
             }
         ]
     }

@@ -19,6 +19,75 @@ from crabber.settings import CONFIG_FILENAME, STOP_SLEEP_SECONDS
 logger = logging.getLogger(__name__)
 
 
+def _prompt(label: str, default: str = "") -> str:
+    """Prompt the user for input, showing a default value in brackets."""
+    if default:
+        raw = input(f"{label} [{default}]: ").strip()
+        return raw or default
+    while True:
+        raw = input(f"{label}: ").strip()
+        if raw:
+            return raw
+
+
+def _parse_project_url(url: str) -> tuple[str, int] | None:
+    """Extract (org_name, project_id) from a GitHub Projects V2 URL."""
+    match = re.match(r"https://github\.com/orgs/([^/]+)/projects/(\d+)", url)
+    if match:
+        return match.group(1), int(match.group(2))
+    return None
+
+
+def _prompt_project_url() -> tuple[str, int]:
+    """Prompt for a GitHub project URL and extract org and project ID."""
+    while True:
+        url = input("GitHub project URL (e.g. https://github.com/orgs/myorg/projects/1): ").strip()
+        result = _parse_project_url(url)
+        if result:
+            return result
+        print("Invalid URL. Expected format: https://github.com/orgs/<org>/projects/<id>")  # noqa: T201
+
+
+def handle_init(output_dir: Path) -> None:
+    """Interactively create a github_project_config.json file."""
+    org_name, project_id = _prompt_project_url()
+    assignee = _prompt("Assignee (GitHub username)")
+    awaiting_task_column = _prompt("Awaiting task column name", "Awaiting")
+    inprogress_task_column = _prompt("In-progress task column name", "In Progress")
+    in_review_task_column = _prompt("In-review task column name", "In Review")
+
+    config_data = {
+        "org_name": org_name,
+        "project_id": project_id,
+        "assignee": assignee,
+        "awaiting-task-column": awaiting_task_column,
+        "inprogress-task-column": inprogress_task_column,
+        "in-review-task-column": in_review_task_column,
+    }
+    config = GithubProjectConfig(**config_data)
+
+    config_path = output_dir / CONFIG_FILENAME
+    config_path.write_text(json.dumps(config.model_dump(by_alias=True), indent=4) + "\n")
+    print(f"Wrote {config_path}")  # noqa: T201
+
+    answer = input("Add github_project_config.json to .gitignore? [Y/n]: ").strip().lower()
+    if answer in ("", "y", "yes"):
+        gitignore_path = output_dir / ".gitignore"
+        if gitignore_path.is_file():
+            content = gitignore_path.read_text()
+            if CONFIG_FILENAME not in content.splitlines():
+                with gitignore_path.open("a") as f:
+                    if content and not content.endswith("\n"):
+                        f.write("\n")
+                    f.write(f"{CONFIG_FILENAME}\n")
+                print(f"Appended {CONFIG_FILENAME} to .gitignore")  # noqa: T201
+            else:
+                print(f"{CONFIG_FILENAME} already in .gitignore")  # noqa: T201
+        else:
+            gitignore_path.write_text(f"{CONFIG_FILENAME}\n")
+            print(f"Created .gitignore with {CONFIG_FILENAME}")  # noqa: T201
+
+
 def load_project_config(cwd: Path) -> GithubProjectConfig | None:
     config_path = cwd / CONFIG_FILENAME
     if not config_path.is_file():

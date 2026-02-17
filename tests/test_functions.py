@@ -1,4 +1,5 @@
 import json
+import tempfile
 from pathlib import Path
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
@@ -12,12 +13,15 @@ from crabber.definitions import (
     StopHookInput,
 )
 from crabber.functions import (
+    _parse_project_url,
+    handle_init,
     handle_notification,
     handle_session_start,
     handle_stop,
     load_project_config,
     parse_project_state,
 )
+from crabber.settings import CONFIG_FILENAME
 
 SAMPLE_CONFIG = {
     "project_id": 42,
@@ -253,3 +257,108 @@ class TestHandleStop(TestCase):
         assert exit_code == 0
         mock_client.post_issue_comment.assert_called_once()
         mock_spawn.assert_called_once()
+
+
+PROJECT_URL = "https://github.com/orgs/my-org/projects/42"
+
+
+class TestParseProjectUrl(TestCase):
+    def test_parses_basic_url(self):
+        result = _parse_project_url("https://github.com/orgs/kiconiaworks/projects/98")
+        assert result == ("kiconiaworks", 98)
+
+    def test_parses_url_with_views(self):
+        result = _parse_project_url("https://github.com/orgs/kiconiaworks/projects/98/views/1")
+        assert result == ("kiconiaworks", 98)
+
+    def test_returns_none_for_invalid_url(self):
+        assert _parse_project_url("https://github.com/user/repo") is None
+        assert _parse_project_url("not-a-url") is None
+
+
+class TestHandleInit(TestCase):
+    @patch("builtins.input", side_effect=[PROJECT_URL, "myuser", "", "", "", "Y"])
+    def test_writes_config_with_defaults(self, mock_input):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            handle_init(tmp_path)
+
+            config_path = tmp_path / CONFIG_FILENAME
+            assert config_path.is_file()
+            data = json.loads(config_path.read_text())
+            assert data["org_name"] == "my-org"
+            assert data["project_id"] == 42
+            assert data["assignee"] == "myuser"
+            assert data["awaiting-task-column"] == "Awaiting"
+            assert data["inprogress-task-column"] == "In Progress"
+            assert data["in-review-task-column"] == "In Review"
+
+    @patch(
+        "builtins.input",
+        side_effect=["https://github.com/orgs/other-org/projects/99", "devuser", "Todo", "Doing", "Done", "n"],
+    )
+    def test_writes_config_with_custom_columns(self, mock_input):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            handle_init(tmp_path)
+
+            data = json.loads((tmp_path / CONFIG_FILENAME).read_text())
+            assert data["org_name"] == "other-org"
+            assert data["project_id"] == 99
+            assert data["awaiting-task-column"] == "Todo"
+            assert data["inprogress-task-column"] == "Doing"
+            assert data["in-review-task-column"] == "Done"
+
+    @patch("builtins.input", side_effect=[PROJECT_URL, "user", "", "", "", "Y"])
+    def test_appends_to_existing_gitignore(self, mock_input):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            gitignore = tmp_path / ".gitignore"
+            gitignore.write_text("*.pyc\n")
+
+            handle_init(tmp_path)
+
+            content = gitignore.read_text()
+            assert "*.pyc" in content
+            assert CONFIG_FILENAME in content
+
+    @patch("builtins.input", side_effect=[PROJECT_URL, "user", "", "", "", "Y"])
+    def test_creates_gitignore_when_missing(self, mock_input):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            handle_init(tmp_path)
+
+            gitignore = tmp_path / ".gitignore"
+            assert gitignore.is_file()
+            assert CONFIG_FILENAME in gitignore.read_text()
+
+    @patch("builtins.input", side_effect=[PROJECT_URL, "user", "", "", "", "n"])
+    def test_skips_gitignore_when_user_says_no(self, mock_input):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            handle_init(tmp_path)
+
+            gitignore = tmp_path / ".gitignore"
+            assert not gitignore.exists()
+
+    @patch("builtins.input", side_effect=[PROJECT_URL, "user", "", "", "", "Y"])
+    def test_skips_duplicate_gitignore_entry(self, mock_input):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            gitignore = tmp_path / ".gitignore"
+            gitignore.write_text(f"{CONFIG_FILENAME}\n")
+
+            handle_init(tmp_path)
+
+            lines = gitignore.read_text().splitlines()
+            assert lines.count(CONFIG_FILENAME) == 1
+
+    @patch("builtins.input", side_effect=["bad-url", PROJECT_URL, "user", "", "", "", "n"])
+    def test_retries_on_invalid_url(self, mock_input):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            handle_init(tmp_path)
+
+            data = json.loads((tmp_path / CONFIG_FILENAME).read_text())
+            assert data["org_name"] == "my-org"
+            assert data["project_id"] == 42
