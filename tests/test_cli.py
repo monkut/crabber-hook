@@ -75,7 +75,7 @@ class TestCmdSessionStart(TestCase):
 
 
 class TestCmdNotification(TestCase):
-    @patch("crabber.cli.handle_notification", return_value=("", 0))
+    @patch("crabber.cli.handle_notification", return_value=("Waiting on response.", 2))
     @patch(
         "crabber.cli._read_and_parse",
         return_value=NotificationHookInput(
@@ -90,7 +90,7 @@ class TestCmdNotification(TestCase):
             cmd_notification(Namespace())
 
         mock_handler.assert_called_once()
-        assert ctx.exception.code == 0
+        assert ctx.exception.code == 2
 
     @patch("crabber.cli._read_and_parse", side_effect=SystemExit(1))
     def test_empty_stdin_exits_one(self, mock_read):

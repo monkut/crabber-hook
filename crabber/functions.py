@@ -226,7 +226,7 @@ def handle_notification(input_data: NotificationHookInput) -> tuple[str, int]:
 
     client = GitHubClient()
     client.post_issue_comment(owner, repo, issue_number, comment_body)
-    return "", 0
+    return "Comment posted on related issue. Waiting on response.", 2
 
 
 def handle_stop(input_data: StopHookInput) -> tuple[str, int]:

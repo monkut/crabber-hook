@@ -56,7 +56,10 @@ def cmd_session_start(_args: argparse.Namespace) -> None:
 def cmd_notification(_args: argparse.Namespace) -> None:
     input_data = _read_and_parse(NotificationHookInput)
     output, exit_code = handle_notification(input_data)
-    _run_and_exit(output, exit_code)
+    if output:
+        sys.stderr.write(output)
+        sys.stderr.flush()
+    sys.exit(exit_code)
 
 
 def cmd_stop(_args: argparse.Namespace) -> None:
