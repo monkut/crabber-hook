@@ -11,8 +11,6 @@ classifiers = [
     "Private :: Do Not Upload",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
@@ -60,7 +58,7 @@ shell = "mkdir test-reports || true && uv run pytest -v tests/ --junitxml=test-r
 
 
 [tool.pyright]
-include = ["crabber", "notebooks"]
+include = ["crabber"]
 exclude = ["**/.venv", "tmp/", "**/node_modules/", "**/__pycache__", "**/*.pyc", "tests/"]
 typeCheckingMode = "basic"
 pythonVersion = "3.14"

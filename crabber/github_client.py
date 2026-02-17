@@ -1,9 +1,13 @@
 import logging
+from typing import TYPE_CHECKING, Self
 
 import httpx
 
-from crabber.definitions import ProjectItem, ProjectItemContent
+from crabber.definitions import IssueComment, IssueDetails, ProjectItem, ProjectItemContent
 from crabber.settings import GITHUB_GRAPHQL_URL, GITHUB_TOKEN
+
+if TYPE_CHECKING:
+    from types import TracebackType
 
 logger = logging.getLogger(__name__)
 
@@ -105,21 +109,34 @@ class GitHubClient:
             "Authorization": f"Bearer {self._token}",
             "Content-Type": "application/json",
         }
+        self._client = httpx.Client(headers=self._headers, timeout=30.0)
+
+    def close(self) -> None:
+        """Close the underlying HTTP client."""
+        self._client.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        self.close()
 
     def _execute_query(self, query: str, variables: dict) -> dict:
-        with httpx.Client() as client:
-            response = client.post(
-                GITHUB_GRAPHQL_URL,
-                json={"query": query, "variables": variables},
-                headers=self._headers,
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            result = response.json()
-            if "errors" in result:
-                msg = f"GraphQL errors: {result['errors']}"
-                raise RuntimeError(msg)
-            return result["data"]
+        response = self._client.post(
+            GITHUB_GRAPHQL_URL,
+            json={"query": query, "variables": variables},
+        )
+        response.raise_for_status()
+        result = response.json()
+        if "errors" in result:
+            msg = f"GraphQL errors: {result['errors']}"
+            raise RuntimeError(msg)
+        return result["data"]
 
     def get_project_items(self, org: str, project_number: int) -> list[ProjectItem]:
         items: list[ProjectItem] = []
@@ -167,10 +184,19 @@ class GitHubClient:
 
         return items
 
-    def get_issue_details(self, owner: str, repo: str, issue_number: int) -> dict:
+    def get_issue_details(self, owner: str, repo: str, issue_number: int) -> IssueDetails:
         variables = {"owner": owner, "repo": repo, "number": issue_number}
         data = self._execute_query(ISSUE_DETAILS_QUERY, variables)
-        return data["repository"]["issue"]
+        issue_data = data["repository"]["issue"]
+        comment_nodes = issue_data.get("comments", {}).get("nodes", [])
+        return IssueDetails(
+            number=issue_data["number"],
+            title=issue_data["title"],
+            body=issue_data.get("body", ""),
+            url=issue_data["url"],
+            updatedAt=issue_data["updatedAt"],
+            comments=[IssueComment(**c) for c in comment_nodes],
+        )
 
     def get_issue_node_id(self, owner: str, repo: str, issue_number: int) -> str:
         variables = {"owner": owner, "repo": repo, "number": issue_number}

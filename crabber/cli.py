@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -30,6 +32,14 @@ def _read_stdin() -> dict | None:
         return None
 
 
+def _read_and_parse[T: BaseModel](model_cls: type[T]) -> T:
+    """Read JSON from stdin and parse into a Pydantic model, or exit with code 1."""
+    data = _read_stdin()
+    if data is None:
+        sys.exit(1)
+    return model_cls(**data)
+
+
 def _run_and_exit(output: str, exit_code: int) -> None:
     if output:
         sys.stdout.write(output)
@@ -38,28 +48,19 @@ def _run_and_exit(output: str, exit_code: int) -> None:
 
 
 def cmd_session_start(_args: argparse.Namespace) -> None:
-    data = _read_stdin()
-    if data is None:
-        sys.exit(1)
-    input_data = HookInput(**data)
+    input_data = _read_and_parse(HookInput)
     output, exit_code = handle_session_start(input_data)
     _run_and_exit(output, exit_code)
 
 
 def cmd_notification(_args: argparse.Namespace) -> None:
-    data = _read_stdin()
-    if data is None:
-        sys.exit(1)
-    input_data = NotificationHookInput(**data)
+    input_data = _read_and_parse(NotificationHookInput)
     output, exit_code = handle_notification(input_data)
     _run_and_exit(output, exit_code)
 
 
 def cmd_stop(_args: argparse.Namespace) -> None:
-    data = _read_stdin()
-    if data is None:
-        sys.exit(1)
-    input_data = StopHookInput(**data)
+    input_data = _read_and_parse(StopHookInput)
     output, exit_code = handle_stop(input_data)
     _run_and_exit(output, exit_code)
 
