@@ -3,6 +3,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from crabber.cli import build_parser, cmd_init, cmd_notification, cmd_session_start, cmd_stop
+from crabber.definitions import HookInput, NotificationHookInput, StopHookInput
 
 
 class TestBuildParser(TestCase):
@@ -44,7 +45,7 @@ class TestBuildParser(TestCase):
 
 class TestCmdSessionStart(TestCase):
     @patch("crabber.cli.handle_session_start", return_value=("session output", 0))
-    @patch("crabber.cli._read_stdin", return_value={"session_id": "test-123", "cwd": "/tmp/test"})
+    @patch("crabber.cli._read_and_parse", return_value=HookInput(session_id="test-123", cwd="/tmp/test"))
     def test_dispatches_to_handler(self, mock_read, mock_handler):
         with (
             patch("sys.stdout") as mock_stdout,
@@ -55,14 +56,14 @@ class TestCmdSessionStart(TestCase):
         mock_handler.assert_called_once()
         mock_stdout.write.assert_called_once_with("session output")
 
-    @patch("crabber.cli._read_stdin", return_value=None)
+    @patch("crabber.cli._read_and_parse", side_effect=SystemExit(1))
     def test_empty_stdin_exits_one(self, mock_read):
         with self.assertRaises(SystemExit) as ctx:
             cmd_session_start(Namespace())
         assert ctx.exception.code == 1
 
     @patch("crabber.cli.handle_session_start", return_value=("", 0))
-    @patch("crabber.cli._read_stdin", return_value={"session_id": "test-123", "cwd": "/tmp/test"})
+    @patch("crabber.cli._read_and_parse", return_value=HookInput(session_id="test-123", cwd="/tmp/test"))
     def test_no_output_doesnt_write(self, mock_read, mock_handler):
         with (
             patch("sys.stdout") as mock_stdout,
@@ -76,13 +77,13 @@ class TestCmdSessionStart(TestCase):
 class TestCmdNotification(TestCase):
     @patch("crabber.cli.handle_notification", return_value=("", 0))
     @patch(
-        "crabber.cli._read_stdin",
-        return_value={
-            "session_id": "test-123",
-            "cwd": "/tmp/test",
-            "title": "Alert",
-            "message": "Something happened",
-        },
+        "crabber.cli._read_and_parse",
+        return_value=NotificationHookInput(
+            session_id="test-123",
+            cwd="/tmp/test",
+            title="Alert",
+            message="Something happened",
+        ),
     )
     def test_dispatches_to_handler(self, mock_read, mock_handler):
         with self.assertRaises(SystemExit) as ctx:
@@ -91,7 +92,7 @@ class TestCmdNotification(TestCase):
         mock_handler.assert_called_once()
         assert ctx.exception.code == 0
 
-    @patch("crabber.cli._read_stdin", return_value=None)
+    @patch("crabber.cli._read_and_parse", side_effect=SystemExit(1))
     def test_empty_stdin_exits_one(self, mock_read):
         with self.assertRaises(SystemExit) as ctx:
             cmd_notification(Namespace())
@@ -101,12 +102,12 @@ class TestCmdNotification(TestCase):
 class TestCmdStop(TestCase):
     @patch("crabber.cli.handle_stop", return_value=("", 0))
     @patch(
-        "crabber.cli._read_stdin",
-        return_value={
-            "session_id": "test-123",
-            "cwd": "/tmp/test",
-            "stopReason": "user_request",
-        },
+        "crabber.cli._read_and_parse",
+        return_value=StopHookInput(
+            session_id="test-123",
+            cwd="/tmp/test",
+            stopReason="user_request",
+        ),
     )
     def test_dispatches_to_handler(self, mock_read, mock_handler):
         with self.assertRaises(SystemExit) as ctx:
@@ -115,7 +116,7 @@ class TestCmdStop(TestCase):
         mock_handler.assert_called_once()
         assert ctx.exception.code == 0
 
-    @patch("crabber.cli._read_stdin", return_value=None)
+    @patch("crabber.cli._read_and_parse", side_effect=SystemExit(1))
     def test_empty_stdin_exits_one(self, mock_read):
         with self.assertRaises(SystemExit) as ctx:
             cmd_stop(Namespace())

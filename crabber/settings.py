@@ -1,8 +1,5 @@
 import logging
 import os
-from pathlib import Path
-
-BASE_DIR = Path(__file__).resolve().parent.parent
 
 # logging.basicConfig set in __init__.py
 logger = logging.getLogger()

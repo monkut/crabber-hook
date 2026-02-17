@@ -11,6 +11,7 @@ from crabber.definitions import (
     HookInput,
     IssueState,
     NotificationHookInput,
+    ProjectState,
     StopHookInput,
 )
 from crabber.github_client import GitHubClient
@@ -98,23 +99,24 @@ def load_project_config(cwd: Path) -> GithubProjectConfig | None:
     return GithubProjectConfig(**data)
 
 
-def parse_project_state(cwd: Path) -> dict[str, str | None]:
+def parse_project_state(cwd: Path) -> ProjectState:
     state_path = cwd / "CURRENT_PROJECT_STATE.md"
-    result: dict[str, str | None] = {
-        "LAST_ISSUE_ID": None,
-        "LAST_ISSUE_STATE": None,
-        "LAST_UPDATED_DATETIME": None,
-    }
     if not state_path.is_file():
-        return result
+        return ProjectState()
 
     content = state_path.read_text()
-    for key in result:
-        match = re.search(rf"{key}\s*[=:]\s*(.+)", content)
+    values: dict[str, str | None] = {}
+    key_map = {
+        "LAST_ISSUE_ID": "last_issue_id",
+        "LAST_ISSUE_STATE": "last_issue_state",
+        "LAST_UPDATED_DATETIME": "last_updated_datetime",
+    }
+    for file_key, field_name in key_map.items():
+        match = re.search(rf"{file_key}\s*[=:]\s*(.+)", content)
         if match:
-            result[key] = match.group(1).strip()
+            values[field_name] = match.group(1).strip()
 
-    return result
+    return ProjectState(**values)
 
 
 def _extract_issue_parts(issue_id: str) -> tuple[str, str, int] | None:
@@ -123,6 +125,26 @@ def _extract_issue_parts(issue_id: str) -> tuple[str, str, int] | None:
     if url_match:
         return url_match.group(1), url_match.group(2), int(url_match.group(3))
     return None
+
+
+def _get_issue_context(cwd: Path) -> tuple[str, str, int] | None:
+    """Check project is configured and return (owner, repo, issue_number) or None."""
+    config_path = cwd / CONFIG_FILENAME
+    if not config_path.is_file():
+        logger.debug("No %s found in %s, skipping", CONFIG_FILENAME, cwd)
+        return None
+
+    state = parse_project_state(cwd)
+    if not state.last_issue_id:
+        logger.debug("No LAST_ISSUE_ID in project state")
+        return None
+
+    parts = _extract_issue_parts(state.last_issue_id)
+    if parts is None:
+        logger.warning("Cannot parse issue ID: %s", state.last_issue_id)
+        return None
+
+    return parts
 
 
 def handle_session_start(input_data: HookInput) -> tuple[str, int]:
@@ -134,14 +156,10 @@ def handle_session_start(input_data: HookInput) -> tuple[str, int]:
     state = parse_project_state(cwd)
     client = GitHubClient()
 
-    last_issue_id = state.get("LAST_ISSUE_ID")
-    last_issue_state = state.get("LAST_ISSUE_STATE")
-    last_updated = state.get("LAST_UPDATED_DATETIME")
+    if state.last_issue_id and state.last_issue_state in (IssueState.ON_GOING.value, IssueState.PENDING.value):
+        return _handle_existing_issue(client, state.last_issue_id, state.last_updated_datetime)
 
-    if last_issue_id and last_issue_state in (IssueState.ON_GOING.value, IssueState.PENDING.value):
-        return _handle_existing_issue(client, last_issue_id, last_updated)
-
-    if not last_issue_id:
+    if not state.last_issue_id:
         return _handle_new_issue(client, config)
 
     return "", 0
@@ -159,17 +177,12 @@ def _handle_existing_issue(
 
     owner, repo, issue_number = parts
     issue = client.get_issue_details(owner, repo, issue_number)
-    current_updated = issue.get("updatedAt", "")
 
-    if last_updated and current_updated <= last_updated:
+    if last_updated and issue.updated_at <= last_updated:
         return "", 0
 
-    title = issue.get("title", "")
-    body = issue.get("body", "")
-    summary = f"{title}\n\n{body}"
-
-    comments = issue.get("comments", {}).get("nodes", [])
-    latest_comment = comments[0]["body"] if comments else "No comments yet."
+    summary = f"{issue.title}\n\n{issue.body}"
+    latest_comment = issue.comments[0].body if issue.comments else "No comments yet."
 
     output = (
         f"Here is a summary of the current issue:\n\n"
@@ -204,23 +217,11 @@ def _handle_new_issue(client: GitHubClient, config: GithubProjectConfig) -> tupl
 
 def handle_notification(input_data: NotificationHookInput) -> tuple[str, int]:
     cwd = Path(input_data.cwd)
-    config = load_project_config(cwd)
-    if config is None:
+    context = _get_issue_context(cwd)
+    if context is None:
         return "", 0
 
-    state = parse_project_state(cwd)
-    last_issue_id = state.get("LAST_ISSUE_ID")
-    if not last_issue_id:
-        logger.debug("No LAST_ISSUE_ID in project state, skipping notification")
-        return "", 0
-
-    parts = _extract_issue_parts(last_issue_id)
-    if parts is None:
-        logger.warning("Cannot parse issue ID: %s", last_issue_id)
-        return "", 0
-
-    owner, repo, issue_number = parts
-
+    owner, repo, issue_number = context
     comment_body = f"{input_data.message}: {input_data.title}\n\nWhich should we do:\n0: Continue\n2: Stop and review"
 
     client = GitHubClient()
@@ -230,23 +231,11 @@ def handle_notification(input_data: NotificationHookInput) -> tuple[str, int]:
 
 def handle_stop(input_data: StopHookInput) -> tuple[str, int]:
     cwd = Path(input_data.cwd)
-    config = load_project_config(cwd)
-    if config is None:
+    context = _get_issue_context(cwd)
+    if context is None:
         return "", 0
 
-    state = parse_project_state(cwd)
-    last_issue_id = state.get("LAST_ISSUE_ID")
-    if not last_issue_id:
-        logger.debug("No LAST_ISSUE_ID in project state, skipping stop comment")
-        return "", 0
-
-    parts = _extract_issue_parts(last_issue_id)
-    if parts is None:
-        logger.warning("Cannot parse issue ID: %s", last_issue_id)
-        return "", 0
-
-    owner, repo, issue_number = parts
-
+    owner, repo, issue_number = context
     comment_body = f"Claude Code session stopped. Reason: {input_data.stop_reason}"
 
     client = GitHubClient()

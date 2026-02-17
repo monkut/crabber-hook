@@ -92,8 +92,6 @@ class TestGitHubClient(TestCase):
         mock_response.raise_for_status.return_value = None
 
         mock_client_instance = MagicMock()
-        mock_client_instance.__enter__ = MagicMock(return_value=mock_client_instance)
-        mock_client_instance.__exit__ = MagicMock(return_value=False)
         mock_client_instance.post.return_value = mock_response
         mock_httpx_client_cls.return_value = mock_client_instance
 
@@ -113,16 +111,14 @@ class TestGitHubClient(TestCase):
         mock_response.raise_for_status.return_value = None
 
         mock_client_instance = MagicMock()
-        mock_client_instance.__enter__ = MagicMock(return_value=mock_client_instance)
-        mock_client_instance.__exit__ = MagicMock(return_value=False)
         mock_client_instance.post.return_value = mock_response
         mock_httpx_client_cls.return_value = mock_client_instance
 
         client = GitHubClient(token="test-token")
         issue = client.get_issue_details("org", "repo", 1)
 
-        assert issue["title"] == "First Issue"
-        assert issue["comments"]["nodes"][0]["body"] == "Latest comment text"
+        assert issue.title == "First Issue"
+        assert issue.comments[0].body == "Latest comment text"
 
     @patch("httpx.Client")
     def test_post_issue_comment(self, mock_httpx_client_cls):
@@ -135,8 +131,6 @@ class TestGitHubClient(TestCase):
         mock_response_comment.raise_for_status.return_value = None
 
         mock_client_instance = MagicMock()
-        mock_client_instance.__enter__ = MagicMock(return_value=mock_client_instance)
-        mock_client_instance.__exit__ = MagicMock(return_value=False)
         mock_client_instance.post.side_effect = [mock_response_node_id, mock_response_comment]
         mock_httpx_client_cls.return_value = mock_client_instance
 
@@ -152,8 +146,6 @@ class TestGitHubClient(TestCase):
         mock_response.raise_for_status.return_value = None
 
         mock_client_instance = MagicMock()
-        mock_client_instance.__enter__ = MagicMock(return_value=mock_client_instance)
-        mock_client_instance.__exit__ = MagicMock(return_value=False)
         mock_client_instance.post.return_value = mock_response
         mock_httpx_client_cls.return_value = mock_client_instance
 
@@ -170,8 +162,6 @@ class TestGitHubClient(TestCase):
         mock_response.raise_for_status.return_value = None
 
         mock_client_instance = MagicMock()
-        mock_client_instance.__enter__ = MagicMock(return_value=mock_client_instance)
-        mock_client_instance.__exit__ = MagicMock(return_value=False)
         mock_client_instance.post.return_value = mock_response
         mock_httpx_client_cls.return_value = mock_client_instance
 

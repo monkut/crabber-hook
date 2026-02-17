@@ -7,9 +7,12 @@ from unittest.mock import MagicMock, patch
 from crabber.definitions import (
     GithubProjectConfig,
     HookInput,
+    IssueComment,
+    IssueDetails,
     NotificationHookInput,
     ProjectItem,
     ProjectItemContent,
+    ProjectState,
     StopHookInput,
 )
 from crabber.functions import (
@@ -34,63 +37,59 @@ SAMPLE_CONFIG = {
 
 
 class TestLoadProjectConfig(TestCase):
-    def test_load_valid_config(self, tmp_path: Path | None = None):
-        tmp = tmp_path or Path("/tmp/test_load_config")
-        tmp.mkdir(parents=True, exist_ok=True)
-        config_file = tmp / "github_project_config.json"
-        config_file.write_text(json.dumps(SAMPLE_CONFIG))
+    def test_load_valid_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config_file = tmp_path / "github_project_config.json"
+            config_file.write_text(json.dumps(SAMPLE_CONFIG))
 
-        result = load_project_config(tmp)
+            result = load_project_config(tmp_path)
 
-        assert result is not None
-        assert result.project_id == 42
-        assert result.org_name == "test-org"
-        assert result.assignee == "testuser"
-        assert result.awaiting_task_column == "Awaiting"
-
-        config_file.unlink()
+            assert result is not None
+            assert result.project_id == 42
+            assert result.org_name == "test-org"
+            assert result.assignee == "testuser"
+            assert result.awaiting_task_column == "Awaiting"
 
     def test_load_missing_config(self):
-        result = load_project_config(Path("/tmp/nonexistent_dir_12345"))
-        assert result is None
+        with tempfile.TemporaryDirectory() as tmp:
+            result = load_project_config(Path(tmp))
+            assert result is None
 
 
 class TestParseProjectState(TestCase):
     def test_parse_with_values(self):
-        tmp = Path("/tmp/test_parse_state")
-        tmp.mkdir(parents=True, exist_ok=True)
-        state_file = tmp / "CURRENT_PROJECT_STATE.md"
-        state_file.write_text(
-            "# Project State\n"
-            "LAST_ISSUE_ID = https://github.com/org/repo/issues/123\n"
-            "LAST_ISSUE_STATE = ON_GOING\n"
-            "LAST_UPDATED_DATETIME = 2025-01-01T00:00:00Z\n"
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            state_file = tmp_path / "CURRENT_PROJECT_STATE.md"
+            state_file.write_text(
+                "# Project State\n"
+                "LAST_ISSUE_ID = https://github.com/org/repo/issues/123\n"
+                "LAST_ISSUE_STATE = ON_GOING\n"
+                "LAST_UPDATED_DATETIME = 2025-01-01T00:00:00Z\n"
+            )
 
-        result = parse_project_state(tmp)
+            result = parse_project_state(tmp_path)
 
-        assert result["LAST_ISSUE_ID"] == "https://github.com/org/repo/issues/123"
-        assert result["LAST_ISSUE_STATE"] == "ON_GOING"
-        assert result["LAST_UPDATED_DATETIME"] == "2025-01-01T00:00:00Z"
-
-        state_file.unlink()
+            assert result.last_issue_id == "https://github.com/org/repo/issues/123"
+            assert result.last_issue_state == "ON_GOING"
+            assert result.last_updated_datetime == "2025-01-01T00:00:00Z"
 
     def test_parse_with_colon_separator(self):
-        tmp = Path("/tmp/test_parse_state_colon")
-        tmp.mkdir(parents=True, exist_ok=True)
-        state_file = tmp / "CURRENT_PROJECT_STATE.md"
-        state_file.write_text("LAST_ISSUE_ID: https://github.com/org/repo/issues/99\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            state_file = tmp_path / "CURRENT_PROJECT_STATE.md"
+            state_file.write_text("LAST_ISSUE_ID: https://github.com/org/repo/issues/99\n")
 
-        result = parse_project_state(tmp)
-        assert result["LAST_ISSUE_ID"] == "https://github.com/org/repo/issues/99"
-
-        state_file.unlink()
+            result = parse_project_state(tmp_path)
+            assert result.last_issue_id == "https://github.com/org/repo/issues/99"
 
     def test_parse_missing_file(self):
-        result = parse_project_state(Path("/tmp/nonexistent_dir_12345"))
-        assert result["LAST_ISSUE_ID"] is None
-        assert result["LAST_ISSUE_STATE"] is None
-        assert result["LAST_UPDATED_DATETIME"] is None
+        with tempfile.TemporaryDirectory() as tmp:
+            result = parse_project_state(Path(tmp))
+            assert result.last_issue_id is None
+            assert result.last_issue_state is None
+            assert result.last_updated_datetime is None
 
 
 class TestHandleSessionStart(TestCase):
@@ -106,19 +105,21 @@ class TestHandleSessionStart(TestCase):
     @patch("crabber.functions.load_project_config")
     def test_existing_issue_with_update(self, mock_load_config, mock_parse_state, mock_client_cls):
         mock_load_config.return_value = GithubProjectConfig(**SAMPLE_CONFIG)
-        mock_parse_state.return_value = {
-            "LAST_ISSUE_ID": "https://github.com/org/repo/issues/10",
-            "LAST_ISSUE_STATE": "ON_GOING",
-            "LAST_UPDATED_DATETIME": "2025-01-01T00:00:00Z",
-        }
+        mock_parse_state.return_value = ProjectState(
+            last_issue_id="https://github.com/org/repo/issues/10",
+            last_issue_state="ON_GOING",
+            last_updated_datetime="2025-01-01T00:00:00Z",
+        )
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
-        mock_client.get_issue_details.return_value = {
-            "title": "Fix the bug",
-            "body": "There is a bug in the login flow",
-            "updatedAt": "2025-06-01T00:00:00Z",
-            "comments": {"nodes": [{"body": "Please also fix the signup flow"}]},
-        }
+        mock_client.get_issue_details.return_value = IssueDetails(
+            number=10,
+            title="Fix the bug",
+            body="There is a bug in the login flow",
+            url="https://github.com/org/repo/issues/10",
+            updatedAt="2025-06-01T00:00:00Z",
+            comments=[IssueComment(body="Please also fix the signup flow")],
+        )
 
         input_data = HookInput(session_id="test", cwd="/tmp/test", hook_event_name="SessionStart")
         output, exit_code = handle_session_start(input_data)
@@ -133,11 +134,7 @@ class TestHandleSessionStart(TestCase):
     @patch("crabber.functions.load_project_config")
     def test_no_issue_fetches_from_column(self, mock_load_config, mock_parse_state, mock_client_cls):
         mock_load_config.return_value = GithubProjectConfig(**SAMPLE_CONFIG)
-        mock_parse_state.return_value = {
-            "LAST_ISSUE_ID": None,
-            "LAST_ISSUE_STATE": None,
-            "LAST_UPDATED_DATETIME": None,
-        }
+        mock_parse_state.return_value = ProjectState()
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
         mock_client.get_items_for_column.return_value = [
@@ -167,19 +164,21 @@ class TestHandleSessionStart(TestCase):
     @patch("crabber.functions.load_project_config")
     def test_existing_issue_no_update(self, mock_load_config, mock_parse_state, mock_client_cls):
         mock_load_config.return_value = GithubProjectConfig(**SAMPLE_CONFIG)
-        mock_parse_state.return_value = {
-            "LAST_ISSUE_ID": "https://github.com/org/repo/issues/10",
-            "LAST_ISSUE_STATE": "ON_GOING",
-            "LAST_UPDATED_DATETIME": "2025-12-01T00:00:00Z",
-        }
+        mock_parse_state.return_value = ProjectState(
+            last_issue_id="https://github.com/org/repo/issues/10",
+            last_issue_state="ON_GOING",
+            last_updated_datetime="2025-12-01T00:00:00Z",
+        )
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
-        mock_client.get_issue_details.return_value = {
-            "title": "Fix the bug",
-            "body": "Body text",
-            "updatedAt": "2025-06-01T00:00:00Z",
-            "comments": {"nodes": []},
-        }
+        mock_client.get_issue_details.return_value = IssueDetails(
+            number=10,
+            title="Fix the bug",
+            body="Body text",
+            url="https://github.com/org/repo/issues/10",
+            updatedAt="2025-06-01T00:00:00Z",
+            comments=[],
+        )
 
         input_data = HookInput(session_id="test", cwd="/tmp/test", hook_event_name="SessionStart")
         output, exit_code = handle_session_start(input_data)
@@ -190,15 +189,8 @@ class TestHandleSessionStart(TestCase):
 
 class TestHandleNotification(TestCase):
     @patch("crabber.functions.GitHubClient")
-    @patch("crabber.functions.parse_project_state")
-    @patch("crabber.functions.load_project_config")
-    def test_posts_comment(self, mock_load_config, mock_parse_state, mock_client_cls):
-        mock_load_config.return_value = GithubProjectConfig(**SAMPLE_CONFIG)
-        mock_parse_state.return_value = {
-            "LAST_ISSUE_ID": "https://github.com/org/repo/issues/10",
-            "LAST_ISSUE_STATE": "ON_GOING",
-            "LAST_UPDATED_DATETIME": None,
-        }
+    @patch("crabber.functions._get_issue_context", return_value=("org", "repo", 10))
+    def test_posts_comment(self, mock_context, mock_client_cls):
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
 
@@ -218,7 +210,8 @@ class TestHandleNotification(TestCase):
         assert "Test Message: Test Title" in comment_body
 
     @patch("crabber.functions.GitHubClient")
-    def test_no_config_skips(self, mock_client_cls):
+    @patch("crabber.functions._get_issue_context", return_value=None)
+    def test_no_config_skips(self, mock_context, mock_client_cls):
         input_data = NotificationHookInput(
             session_id="test",
             cwd="/tmp/no_config_xyz",
@@ -234,15 +227,8 @@ class TestHandleNotification(TestCase):
 class TestHandleStop(TestCase):
     @patch("crabber.functions._spawn_kill_process")
     @patch("crabber.functions.GitHubClient")
-    @patch("crabber.functions.parse_project_state")
-    @patch("crabber.functions.load_project_config")
-    def test_posts_stop_comment_and_spawns_kill(self, mock_load_config, mock_parse_state, mock_client_cls, mock_spawn):
-        mock_load_config.return_value = GithubProjectConfig(**SAMPLE_CONFIG)
-        mock_parse_state.return_value = {
-            "LAST_ISSUE_ID": "https://github.com/org/repo/issues/10",
-            "LAST_ISSUE_STATE": "ON_GOING",
-            "LAST_UPDATED_DATETIME": None,
-        }
+    @patch("crabber.functions._get_issue_context", return_value=("org", "repo", 10))
+    def test_posts_stop_comment_and_spawns_kill(self, mock_context, mock_client_cls, mock_spawn):
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
 
