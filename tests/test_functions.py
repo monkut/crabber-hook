@@ -203,7 +203,8 @@ class TestHandleNotification(TestCase):
         )
         output, exit_code = handle_notification(input_data)
 
-        assert exit_code == 0
+        assert exit_code == 2
+        assert "Waiting on response" in output
         mock_client.post_issue_comment.assert_called_once()
         call_args = mock_client.post_issue_comment.call_args
         comment_body = call_args[0][3]
