@@ -25,6 +25,9 @@ dependencies = [
     "pydantic>=2.10",
 ]
 
+[project.scripts]
+crabber = "crabber.cli:main"
+
 [project.urls]
 Repository = "https://github.com/kiconiaworks/crabber-hook"
 
