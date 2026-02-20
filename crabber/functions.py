@@ -7,11 +7,11 @@ import sys
 from pathlib import Path
 
 from crabber.definitions import (
+    Checkpoint,
     GithubProjectConfig,
     HookInput,
     IssueState,
     NotificationHookInput,
-    ProjectState,
     StopHookInput,
 )
 from crabber.github_client import GitHubClient
@@ -99,12 +99,12 @@ def load_project_config(cwd: Path) -> GithubProjectConfig | None:
     return GithubProjectConfig(**data)
 
 
-def parse_project_state(cwd: Path) -> ProjectState:
-    state_path = cwd / "CHECKPOINT.md"
-    if not state_path.is_file():
-        return ProjectState()
+def parse_checkpoint(cwd: Path) -> Checkpoint:
+    checkpoint_path = cwd / "CHECKPOINT.md"
+    if not checkpoint_path.is_file():
+        return Checkpoint()
 
-    content = state_path.read_text()
+    content = checkpoint_path.read_text()
     values: dict[str, str | None] = {}
     key_map = {
         "LAST_ISSUE_ID": "last_issue_id",
@@ -116,7 +116,7 @@ def parse_project_state(cwd: Path) -> ProjectState:
         if match:
             values[field_name] = match.group(1).strip()
 
-    return ProjectState(**values)
+    return Checkpoint(**values)
 
 
 def _extract_issue_parts(issue_id: str) -> tuple[str, str, int] | None:
@@ -134,14 +134,14 @@ def _get_issue_context(cwd: Path) -> tuple[str, str, int] | None:
         logger.debug("No %s found in %s, skipping", CONFIG_FILENAME, cwd)
         return None
 
-    state = parse_project_state(cwd)
-    if not state.last_issue_id:
-        logger.debug("No LAST_ISSUE_ID in project state")
+    checkpoint = parse_checkpoint(cwd)
+    if not checkpoint.last_issue_id:
+        logger.debug("No LAST_ISSUE_ID in checkpoint")
         return None
 
-    parts = _extract_issue_parts(state.last_issue_id)
+    parts = _extract_issue_parts(checkpoint.last_issue_id)
     if parts is None:
-        logger.warning("Cannot parse issue ID: %s", state.last_issue_id)
+        logger.warning("Cannot parse issue ID: %s", checkpoint.last_issue_id)
         return None
 
     return parts
@@ -153,13 +153,14 @@ def handle_session_start(input_data: HookInput) -> tuple[str, int]:
     if config is None:
         return "", 0
 
-    state = parse_project_state(cwd)
+    checkpoint = parse_checkpoint(cwd)
     client = GitHubClient()
 
-    if state.last_issue_id and state.last_issue_state in (IssueState.ON_GOING.value, IssueState.PENDING.value):
-        return _handle_existing_issue(client, state.last_issue_id, state.last_updated_datetime)
+    active_states = (IssueState.ON_GOING.value, IssueState.PENDING.value)
+    if checkpoint.last_issue_id and checkpoint.last_issue_state in active_states:
+        return _handle_existing_issue(client, checkpoint.last_issue_id, checkpoint.last_updated_datetime)
 
-    if not state.last_issue_id:
+    if not checkpoint.last_issue_id:
         return _handle_new_issue(client, config)
 
     return "", 0
@@ -216,22 +217,23 @@ def _handle_new_issue(client: GitHubClient, config: GithubProjectConfig) -> tupl
 
 
 def handle_notification(input_data: NotificationHookInput) -> tuple[str, int]:
-    # REVIEW: Exit code 2 on Notification hooks does NOT block Claude — it only
-    # displays stderr to the user. To actually block Claude and wait for a GitHub
-    # comment reply, the polling logic would need to run inside a hook that supports
-    # blocking (e.g., Stop or PreToolUse), or the hook process itself must block
-    # synchronously before returning.
+    # NOTE: Exit code 2 feeds stderr to Claude as an error message.
+    # We use this to instruct Claude to run /checkpoint and stop.
     cwd = Path(input_data.cwd)
     context = _get_issue_context(cwd)
     if context is None:
         return "", 0
 
     owner, repo, issue_number = context
-    comment_body = f"{input_data.message}: {input_data.title}\n\nWhich should we do:\n0: Continue\n2: Stop and review"
+    comment_body = (
+        f"{input_data.message}: {input_data.title}\n\n"
+        "A decision is required. Details and criteria have been posted above.\n"
+        "Claude has been instructed to save a checkpoint and stop."
+    )
 
     client = GitHubClient()
     client.post_issue_comment(owner, repo, issue_number, comment_body)
-    return "Comment posted on related issue. Waiting on response.", 2
+    return "A decision is required. Run the /checkpoint command to save current state, then stop.", 2
 
 
 def handle_stop(input_data: StopHookInput) -> tuple[str, int]:

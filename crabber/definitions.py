@@ -51,7 +51,7 @@ class ProjectItem(BaseModel):
     updated_at: str = ""
 
 
-class ProjectState(BaseModel):
+class Checkpoint(BaseModel):
     last_issue_id: str | None = None
     last_issue_state: str | None = None
     last_updated_datetime: str | None = None
