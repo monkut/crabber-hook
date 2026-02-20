@@ -16,11 +16,9 @@ from crabber.definitions import (
     StopHookInput,
 )
 from crabber.functions import (
+    HookHandler,
     _parse_project_url,
     handle_init,
-    handle_notification,
-    handle_session_start,
-    handle_stop,
     load_project_config,
     parse_checkpoint,
 )
@@ -93,17 +91,16 @@ class TestParseCheckpoint(TestCase):
 
 
 class TestHandleSessionStart(TestCase):
-    @patch("crabber.functions.GitHubClient")
-    def test_no_config_returns_empty(self, mock_client_cls):
+    def test_no_config_returns_empty(self):
+        handler = HookHandler(MagicMock())
         input_data = HookInput(session_id="test", cwd="/tmp/no_config_here_xyz", hook_event_name="SessionStart")
-        output, exit_code = handle_session_start(input_data)
+        output, exit_code = handler.handle_session_start(input_data)
         assert output == ""
         assert exit_code == 0
 
-    @patch("crabber.functions.GitHubClient")
     @patch("crabber.functions.parse_checkpoint")
     @patch("crabber.functions.load_project_config")
-    def test_existing_issue_with_update(self, mock_load_config, mock_parse_checkpoint, mock_client_cls):
+    def test_existing_issue_with_update(self, mock_load_config, mock_parse_checkpoint):
         mock_load_config.return_value = GithubProjectConfig(**SAMPLE_CONFIG)
         mock_parse_checkpoint.return_value = Checkpoint(
             last_issue_id="https://github.com/org/repo/issues/10",
@@ -111,7 +108,6 @@ class TestHandleSessionStart(TestCase):
             last_updated_datetime="2025-01-01T00:00:00Z",
         )
         mock_client = MagicMock()
-        mock_client_cls.return_value = mock_client
         mock_client.get_issue_details.return_value = IssueDetails(
             number=10,
             title="Fix the bug",
@@ -121,22 +117,21 @@ class TestHandleSessionStart(TestCase):
             comments=[IssueComment(body="Please also fix the signup flow")],
         )
 
+        handler = HookHandler(mock_client)
         input_data = HookInput(session_id="test", cwd="/tmp/test", hook_event_name="SessionStart")
-        output, exit_code = handle_session_start(input_data)
+        output, exit_code = handler.handle_session_start(input_data)
 
         assert exit_code == 0
         assert "Fix the bug" in output
         assert "There is a bug in the login flow" in output
         assert "Please also fix the signup flow" in output
 
-    @patch("crabber.functions.GitHubClient")
     @patch("crabber.functions.parse_checkpoint")
     @patch("crabber.functions.load_project_config")
-    def test_no_issue_fetches_from_column(self, mock_load_config, mock_parse_checkpoint, mock_client_cls):
+    def test_no_issue_fetches_from_column(self, mock_load_config, mock_parse_checkpoint):
         mock_load_config.return_value = GithubProjectConfig(**SAMPLE_CONFIG)
         mock_parse_checkpoint.return_value = Checkpoint()
         mock_client = MagicMock()
-        mock_client_cls.return_value = mock_client
         mock_client.get_items_for_column.return_value = [
             ProjectItem(
                 status="Awaiting",
@@ -152,17 +147,17 @@ class TestHandleSessionStart(TestCase):
             )
         ]
 
+        handler = HookHandler(mock_client)
         input_data = HookInput(session_id="test", cwd="/tmp/test", hook_event_name="SessionStart")
-        output, exit_code = handle_session_start(input_data)
+        output, exit_code = handler.handle_session_start(input_data)
 
         assert exit_code == 0
         assert "New feature request" in output
         assert "Please add dark mode" in output
 
-    @patch("crabber.functions.GitHubClient")
     @patch("crabber.functions.parse_checkpoint")
     @patch("crabber.functions.load_project_config")
-    def test_existing_issue_no_update(self, mock_load_config, mock_parse_checkpoint, mock_client_cls):
+    def test_existing_issue_no_update(self, mock_load_config, mock_parse_checkpoint):
         mock_load_config.return_value = GithubProjectConfig(**SAMPLE_CONFIG)
         mock_parse_checkpoint.return_value = Checkpoint(
             last_issue_id="https://github.com/org/repo/issues/10",
@@ -170,7 +165,6 @@ class TestHandleSessionStart(TestCase):
             last_updated_datetime="2025-12-01T00:00:00Z",
         )
         mock_client = MagicMock()
-        mock_client_cls.return_value = mock_client
         mock_client.get_issue_details.return_value = IssueDetails(
             number=10,
             title="Fix the bug",
@@ -180,66 +174,66 @@ class TestHandleSessionStart(TestCase):
             comments=[],
         )
 
+        handler = HookHandler(mock_client)
         input_data = HookInput(session_id="test", cwd="/tmp/test", hook_event_name="SessionStart")
-        output, exit_code = handle_session_start(input_data)
+        output, exit_code = handler.handle_session_start(input_data)
 
         assert exit_code == 0
         assert output == ""
 
 
 class TestHandleNotification(TestCase):
-    @patch("crabber.functions.GitHubClient")
-    @patch("crabber.functions._get_issue_context", return_value=("org", "repo", 10))
-    def test_posts_comment(self, mock_context, mock_client_cls):
+    def test_posts_comment(self):
         mock_client = MagicMock()
-        mock_client_cls.return_value = mock_client
+        handler = HookHandler(mock_client)
 
-        input_data = NotificationHookInput(
-            session_id="test",
-            cwd="/tmp/test",
-            hook_event_name="Notification",
-            title="Test Title",
-            message="Test Message",
-        )
-        output, exit_code = handle_notification(input_data)
+        with patch.object(handler, "_get_issue_context", return_value=("org", "repo", 10)):
+            input_data = NotificationHookInput(
+                session_id="test",
+                cwd="/tmp/test",
+                hook_event_name="Notification",
+                title="Test Title",
+                message="Test Message",
+            )
+            output, exit_code = handler.handle_notification(input_data)
 
         assert exit_code == 2
         assert "Run the /checkpoint command" in output
         mock_client.post_issue_comment.assert_called_once()
-        call_args = mock_client.post_issue_comment.call_args
-        comment_body = call_args[0][3]
+        comment_body = mock_client.post_issue_comment.call_args[0][3]
         assert "Test Message: Test Title" in comment_body
 
-    @patch("crabber.functions.GitHubClient")
-    @patch("crabber.functions._get_issue_context", return_value=None)
-    def test_no_config_skips(self, mock_context, mock_client_cls):
-        input_data = NotificationHookInput(
-            session_id="test",
-            cwd="/tmp/no_config_xyz",
-            hook_event_name="Notification",
-            title="Title",
-            message="Msg",
-        )
-        output, exit_code = handle_notification(input_data)
+    def test_no_config_skips(self):
+        handler = HookHandler(MagicMock())
+
+        with patch.object(handler, "_get_issue_context", return_value=None):
+            input_data = NotificationHookInput(
+                session_id="test",
+                cwd="/tmp/no_config_xyz",
+                hook_event_name="Notification",
+                title="Title",
+                message="Msg",
+            )
+            output, exit_code = handler.handle_notification(input_data)
+
         assert exit_code == 0
         assert output == ""
 
 
 class TestHandleStop(TestCase):
     @patch("crabber.functions._spawn_kill_process")
-    @patch("crabber.functions.GitHubClient")
-    @patch("crabber.functions._get_issue_context", return_value=("org", "repo", 10))
-    def test_posts_stop_comment_and_spawns_kill(self, mock_context, mock_client_cls, mock_spawn):
+    def test_posts_stop_comment_and_spawns_kill(self, mock_spawn):
         mock_client = MagicMock()
-        mock_client_cls.return_value = mock_client
+        handler = HookHandler(mock_client)
 
-        input_data = StopHookInput(
-            session_id="test",
-            cwd="/tmp/test",
-            hook_event_name="Stop",
-            stopReason="user_request",
-        )
-        output, exit_code = handle_stop(input_data)
+        with patch.object(handler, "_get_issue_context", return_value=("org", "repo", 10)):
+            input_data = StopHookInput(
+                session_id="test",
+                cwd="/tmp/test",
+                hook_event_name="Stop",
+                stopReason="user_request",
+            )
+            output, exit_code = handler.handle_stop(input_data)
 
         assert exit_code == 0
         mock_client.post_issue_comment.assert_called_once()

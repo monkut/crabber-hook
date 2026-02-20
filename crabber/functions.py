@@ -127,132 +127,6 @@ def _extract_issue_parts(issue_id: str) -> tuple[str, str, int] | None:
     return None
 
 
-def _get_issue_context(cwd: Path) -> tuple[str, str, int] | None:
-    """Check project is configured and return (owner, repo, issue_number) or None."""
-    config_path = cwd / CONFIG_FILENAME
-    if not config_path.is_file():
-        logger.debug("No %s found in %s, skipping", CONFIG_FILENAME, cwd)
-        return None
-
-    checkpoint = parse_checkpoint(cwd)
-    if not checkpoint.last_issue_id:
-        logger.debug("No LAST_ISSUE_ID in checkpoint")
-        return None
-
-    parts = _extract_issue_parts(checkpoint.last_issue_id)
-    if parts is None:
-        logger.warning("Cannot parse issue ID: %s", checkpoint.last_issue_id)
-        return None
-
-    return parts
-
-
-def handle_session_start(input_data: HookInput) -> tuple[str, int]:
-    cwd = Path(input_data.cwd)
-    config = load_project_config(cwd)
-    if config is None:
-        return "", 0
-
-    checkpoint = parse_checkpoint(cwd)
-    client = GitHubClient()
-
-    active_states = (IssueState.ON_GOING.value, IssueState.PENDING.value)
-    if checkpoint.last_issue_id and checkpoint.last_issue_state in active_states:
-        return _handle_existing_issue(client, checkpoint.last_issue_id, checkpoint.last_updated_datetime)
-
-    if not checkpoint.last_issue_id:
-        return _handle_new_issue(client, config)
-
-    return "", 0
-
-
-def _handle_existing_issue(
-    client: GitHubClient,
-    issue_id: str,
-    last_updated: str | None,
-) -> tuple[str, int]:
-    parts = _extract_issue_parts(issue_id)
-    if parts is None:
-        logger.warning("Cannot parse issue ID: %s", issue_id)
-        return "", 0
-
-    owner, repo, issue_number = parts
-    issue = client.get_issue_details(owner, repo, issue_number)
-
-    if last_updated and issue.updated_at <= last_updated:
-        return "", 0
-
-    summary = f"{issue.title}\n\n{issue.body}"
-    latest_comment = issue.comments[0].body if issue.comments else "No comments yet."
-
-    output = (
-        f"Here is a summary of the current issue:\n\n"
-        f"    {summary}\n\n"
-        f"Review the latest comment below and address the comments, "
-        f"when complete run the `/checkpoint` command, then respond to the comments in the issue.\n"
-        f"    {latest_comment}\n"
-    )
-    return output, 0
-
-
-def _handle_new_issue(client: GitHubClient, config: GithubProjectConfig) -> tuple[str, int]:
-    items = client.get_items_for_column(
-        org=config.org_name,
-        project_number=config.project_id,
-        column_name=config.awaiting_task_column,
-        assignee=config.assignee,
-    )
-    if not items:
-        return "", 0
-
-    top_item = items[0]
-    if top_item.content is None:
-        return "", 0
-
-    content = top_item.content
-    issue_content = f"#{content.number}: {content.title}\n\n{content.body}\n\n{content.url}"
-
-    output = f"Review the following and address the issue:\n\n    {issue_content}\n"
-    return output, 0
-
-
-def handle_notification(input_data: NotificationHookInput) -> tuple[str, int]:
-    # NOTE: Exit code 2 feeds stderr to Claude as an error message.
-    # We use this to instruct Claude to run /checkpoint and stop.
-    cwd = Path(input_data.cwd)
-    context = _get_issue_context(cwd)
-    if context is None:
-        return "", 0
-
-    owner, repo, issue_number = context
-    comment_body = (
-        f"{input_data.message}: {input_data.title}\n\n"
-        "A decision is required. Details and criteria have been posted above.\n"
-        "Claude has been instructed to save a checkpoint and stop."
-    )
-
-    client = GitHubClient()
-    client.post_issue_comment(owner, repo, issue_number, comment_body)
-    return "A decision is required. Run the /checkpoint command to save current state, then stop.", 2
-
-
-def handle_stop(input_data: StopHookInput) -> tuple[str, int]:
-    cwd = Path(input_data.cwd)
-    context = _get_issue_context(cwd)
-    if context is None:
-        return "", 0
-
-    owner, repo, issue_number = context
-    comment_body = f"Claude Code session stopped. Reason: {input_data.stop_reason}"
-
-    client = GitHubClient()
-    client.post_issue_comment(owner, repo, issue_number, comment_body)
-
-    _spawn_kill_process()
-
-    return "", 0
-
-
 def _spawn_kill_process() -> None:
     parent_pid = os.getppid()
     subprocess.Popen(  # noqa: S603
@@ -266,3 +140,127 @@ def _spawn_kill_process() -> None:
         stderr=subprocess.DEVNULL,
     )
     logger.debug("Spawned kill process for PID %d with %ds delay", parent_pid, STOP_SLEEP_SECONDS)
+
+
+class HookHandler:
+    """Dispatches Claude Code hook events to GitHub Projects V2."""
+
+    def __init__(self, client: GitHubClient) -> None:
+        self.client = client
+
+    def _get_issue_context(self, cwd: Path) -> tuple[str, str, int] | None:
+        """Return (owner, repo, issue_number) if configured, else None."""
+        config_path = cwd / CONFIG_FILENAME
+        if not config_path.is_file():
+            logger.debug("No %s found in %s, skipping", CONFIG_FILENAME, cwd)
+            return None
+
+        checkpoint = parse_checkpoint(cwd)
+        if not checkpoint.last_issue_id:
+            logger.debug("No LAST_ISSUE_ID in checkpoint")
+            return None
+
+        parts = _extract_issue_parts(checkpoint.last_issue_id)
+        if parts is None:
+            logger.warning("Cannot parse issue ID: %s", checkpoint.last_issue_id)
+            return None
+
+        return parts
+
+    def handle_session_start(self, input_data: HookInput) -> tuple[str, int]:
+        cwd = Path(input_data.cwd)
+        config = load_project_config(cwd)
+        if config is None:
+            return "", 0
+
+        checkpoint = parse_checkpoint(cwd)
+
+        active_states = (IssueState.ON_GOING.value, IssueState.PENDING.value)
+        if checkpoint.last_issue_id and checkpoint.last_issue_state in active_states:
+            return self._handle_existing_issue(checkpoint.last_issue_id, checkpoint.last_updated_datetime)
+
+        if not checkpoint.last_issue_id:
+            return self._handle_new_issue(config)
+
+        return "", 0
+
+    def _handle_existing_issue(
+        self,
+        issue_id: str,
+        last_updated: str | None,
+    ) -> tuple[str, int]:
+        parts = _extract_issue_parts(issue_id)
+        if parts is None:
+            logger.warning("Cannot parse issue ID: %s", issue_id)
+            return "", 0
+
+        owner, repo, issue_number = parts
+        issue = self.client.get_issue_details(owner, repo, issue_number)
+
+        if last_updated and issue.updated_at <= last_updated:
+            return "", 0
+
+        summary = f"{issue.title}\n\n{issue.body}"
+        latest_comment = issue.comments[0].body if issue.comments else "No comments yet."
+
+        output = (
+            f"Here is a summary of the current issue:\n\n"
+            f"    {summary}\n\n"
+            f"Review the latest comment below and address the comments, "
+            f"when complete run the `/checkpoint` command, then respond to the comments in the issue.\n"
+            f"    {latest_comment}\n"
+        )
+        return output, 0
+
+    def _handle_new_issue(self, config: GithubProjectConfig) -> tuple[str, int]:
+        items = self.client.get_items_for_column(
+            org=config.org_name,
+            project_number=config.project_id,
+            column_name=config.awaiting_task_column,
+            assignee=config.assignee,
+        )
+        if not items:
+            return "", 0
+
+        top_item = items[0]
+        if top_item.content is None:
+            return "", 0
+
+        content = top_item.content
+        issue_content = f"#{content.number}: {content.title}\n\n{content.body}\n\n{content.url}"
+
+        output = f"Review the following and address the issue:\n\n    {issue_content}\n"
+        return output, 0
+
+    def handle_notification(self, input_data: NotificationHookInput) -> tuple[str, int]:
+        # NOTE: Exit code 2 feeds stderr to Claude as an error message.
+        # We use this to instruct Claude to run /checkpoint and stop.
+        cwd = Path(input_data.cwd)
+        context = self._get_issue_context(cwd)
+        if context is None:
+            return "", 0
+
+        owner, repo, issue_number = context
+        comment_body = (
+            f"{input_data.message}: {input_data.title}\n\n"
+            "A decision is required. Details and criteria have been posted above.\n"
+            "Claude has been instructed to save a checkpoint and stop."
+        )
+
+        self.client.post_issue_comment(owner, repo, issue_number, comment_body)
+        return "A decision is required. Run the /checkpoint command to save current state, then stop.", 2
+
+    def handle_stop(self, input_data: StopHookInput) -> tuple[str, int]:
+        cwd = Path(input_data.cwd)
+        context = self._get_issue_context(cwd)
+        if context is None:
+            return "", 0
+
+        owner, repo, issue_number = context
+        comment_body = f"Claude Code session stopped. Reason: {input_data.stop_reason}"
+
+        self.client.post_issue_comment(owner, repo, issue_number, comment_body)
+
+        _spawn_kill_process()
+
+        return "", 0
