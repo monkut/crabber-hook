@@ -1,6 +1,6 @@
 from argparse import Namespace
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from crabber.cli import build_parser, cmd_init, cmd_notification, cmd_session_start, cmd_stop
 from crabber.definitions import HookInput, NotificationHookInput, StopHookInput
@@ -44,16 +44,20 @@ class TestBuildParser(TestCase):
 
 
 class TestCmdSessionStart(TestCase):
-    @patch("crabber.cli.handle_session_start", return_value=("session output", 0))
+    @patch("crabber.cli._make_handler")
     @patch("crabber.cli._read_and_parse", return_value=HookInput(session_id="test-123", cwd="/tmp/test"))
-    def test_dispatches_to_handler(self, mock_read, mock_handler):
+    def test_dispatches_to_handler(self, mock_read, mock_make_handler):
+        mock_handler = MagicMock()
+        mock_handler.handle_session_start.return_value = ("session output", 0)
+        mock_make_handler.return_value = mock_handler
+
         with (
             patch("sys.stdout") as mock_stdout,
             self.assertRaises(SystemExit),
         ):
             cmd_session_start(Namespace())
 
-        mock_handler.assert_called_once()
+        mock_handler.handle_session_start.assert_called_once()
         mock_stdout.write.assert_called_once_with("session output")
 
     @patch("crabber.cli._read_and_parse", side_effect=SystemExit(1))
@@ -62,9 +66,13 @@ class TestCmdSessionStart(TestCase):
             cmd_session_start(Namespace())
         assert ctx.exception.code == 1
 
-    @patch("crabber.cli.handle_session_start", return_value=("", 0))
+    @patch("crabber.cli._make_handler")
     @patch("crabber.cli._read_and_parse", return_value=HookInput(session_id="test-123", cwd="/tmp/test"))
-    def test_no_output_doesnt_write(self, mock_read, mock_handler):
+    def test_no_output_doesnt_write(self, mock_read, mock_make_handler):
+        mock_handler = MagicMock()
+        mock_handler.handle_session_start.return_value = ("", 0)
+        mock_make_handler.return_value = mock_handler
+
         with (
             patch("sys.stdout") as mock_stdout,
             self.assertRaises(SystemExit),
@@ -75,7 +83,7 @@ class TestCmdSessionStart(TestCase):
 
 
 class TestCmdNotification(TestCase):
-    @patch("crabber.cli.handle_notification", return_value=("Waiting on response.", 2))
+    @patch("crabber.cli._make_handler")
     @patch(
         "crabber.cli._read_and_parse",
         return_value=NotificationHookInput(
@@ -85,11 +93,15 @@ class TestCmdNotification(TestCase):
             message="Something happened",
         ),
     )
-    def test_dispatches_to_handler(self, mock_read, mock_handler):
+    def test_dispatches_to_handler(self, mock_read, mock_make_handler):
+        mock_handler = MagicMock()
+        mock_handler.handle_notification.return_value = ("Waiting on response.", 2)
+        mock_make_handler.return_value = mock_handler
+
         with self.assertRaises(SystemExit) as ctx:
             cmd_notification(Namespace())
 
-        mock_handler.assert_called_once()
+        mock_handler.handle_notification.assert_called_once()
         assert ctx.exception.code == 2
 
     @patch("crabber.cli._read_and_parse", side_effect=SystemExit(1))
@@ -100,7 +112,7 @@ class TestCmdNotification(TestCase):
 
 
 class TestCmdStop(TestCase):
-    @patch("crabber.cli.handle_stop", return_value=("", 0))
+    @patch("crabber.cli._make_handler")
     @patch(
         "crabber.cli._read_and_parse",
         return_value=StopHookInput(
@@ -109,11 +121,15 @@ class TestCmdStop(TestCase):
             stopReason="user_request",
         ),
     )
-    def test_dispatches_to_handler(self, mock_read, mock_handler):
+    def test_dispatches_to_handler(self, mock_read, mock_make_handler):
+        mock_handler = MagicMock()
+        mock_handler.handle_stop.return_value = ("", 0)
+        mock_make_handler.return_value = mock_handler
+
         with self.assertRaises(SystemExit) as ctx:
             cmd_stop(Namespace())
 
-        mock_handler.assert_called_once()
+        mock_handler.handle_stop.assert_called_once()
         assert ctx.exception.code == 0
 
     @patch("crabber.cli._read_and_parse", side_effect=SystemExit(1))

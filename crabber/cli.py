@@ -14,7 +14,8 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 from crabber.definitions import HookInput, NotificationHookInput, StopHookInput
-from crabber.functions import handle_init, handle_notification, handle_session_start, handle_stop
+from crabber.functions import HookHandler, handle_init
+from crabber.github_client import GitHubClient
 
 logger = logging.getLogger(__name__)
 
@@ -47,15 +48,21 @@ def _run_and_exit(output: str, exit_code: int) -> None:
     sys.exit(exit_code)
 
 
+def _make_handler() -> HookHandler:
+    return HookHandler(GitHubClient())
+
+
 def cmd_session_start(_args: argparse.Namespace) -> None:
     input_data = _read_and_parse(HookInput)
-    output, exit_code = handle_session_start(input_data)
+    handler = _make_handler()
+    output, exit_code = handler.handle_session_start(input_data)
     _run_and_exit(output, exit_code)
 
 
 def cmd_notification(_args: argparse.Namespace) -> None:
     input_data = _read_and_parse(NotificationHookInput)
-    output, exit_code = handle_notification(input_data)
+    handler = _make_handler()
+    output, exit_code = handler.handle_notification(input_data)
     if output:
         sys.stderr.write(output)
         sys.stderr.flush()
@@ -64,7 +71,8 @@ def cmd_notification(_args: argparse.Namespace) -> None:
 
 def cmd_stop(_args: argparse.Namespace) -> None:
     input_data = _read_and_parse(StopHookInput)
-    output, exit_code = handle_stop(input_data)
+    handler = _make_handler()
+    output, exit_code = handler.handle_stop(input_data)
     _run_and_exit(output, exit_code)
 
 
