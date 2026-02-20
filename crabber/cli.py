@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import sys
+import typing
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -42,10 +43,11 @@ def _read_and_parse[T: BaseModel](model_cls: type[T]) -> T:
     return model_cls(**data)
 
 
-def _run_and_exit(output: str, exit_code: int) -> None:
+def _run_and_exit(output: str, exit_code: int, *, stream: typing.TextIO | None = None) -> None:
     if output:
-        sys.stdout.write(output)
-        sys.stdout.flush()
+        target = stream or sys.stdout
+        target.write(output)
+        target.flush()
     sys.exit(exit_code)
 
 
@@ -76,10 +78,7 @@ def cmd_notification(_args: argparse.Namespace) -> None:
     input_data = _read_and_parse(NotificationHookInput)
     handler = _make_handler()
     output, exit_code = handler.handle_notification(input_data)
-    if output:
-        sys.stderr.write(output)
-        sys.stderr.flush()
-    sys.exit(exit_code)
+    _run_and_exit(output, exit_code, stream=sys.stderr)
 
 
 def cmd_stop(_args: argparse.Namespace) -> None:

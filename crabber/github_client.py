@@ -1,13 +1,9 @@
 import logging
-from typing import TYPE_CHECKING, Self
 
 import httpx
 
 from crabber.definitions import IssueComment, IssueDetails, ProjectItem, ProjectItemContent
 from crabber.settings import GITHUB_GRAPHQL_URL, GITHUB_TOKEN
-
-if TYPE_CHECKING:
-    from types import TracebackType
 
 logger = logging.getLogger(__name__)
 
@@ -111,21 +107,6 @@ class GitHubClient:
         }
         self._client = httpx.Client(headers=self._headers, timeout=30.0)
 
-    def close(self) -> None:
-        """Close the underlying HTTP client."""
-        self._client.close()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
-        self.close()
-
     def _execute_query(self, query: str, variables: dict) -> dict:
         response = self._client.post(
             GITHUB_GRAPHQL_URL,
@@ -215,5 +196,6 @@ class GitHubClient:
         column_name: str,
         assignee: str,
     ) -> list[ProjectItem]:
+        # GitHub Projects V2 GraphQL API lacks server-side filtering by status/assignee
         all_items = self.get_project_items(org, project_number)
         return [item for item in all_items if item.status == column_name and assignee in item.assignees]

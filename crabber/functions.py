@@ -148,14 +148,9 @@ class HookHandler:
     def __init__(self, client: GitHubClient) -> None:
         self.client = client
 
-    def _get_issue_context(self, cwd: Path) -> tuple[str, str, int] | None:
-        """Return (owner, repo, issue_number) if configured, else None."""
-        config_path = cwd / CONFIG_FILENAME
-        if not config_path.is_file():
-            logger.debug("No %s found in %s, skipping", CONFIG_FILENAME, cwd)
-            return None
-
-        checkpoint = parse_checkpoint(cwd)
+    @staticmethod
+    def _get_issue_context(checkpoint: Checkpoint) -> tuple[str, str, int] | None:
+        """Return (owner, repo, issue_number) from checkpoint, else None."""
         if not checkpoint.last_issue_id:
             logger.debug("No LAST_ISSUE_ID in checkpoint")
             return None
@@ -177,7 +172,10 @@ class HookHandler:
 
         active_states = (IssueState.ON_GOING.value, IssueState.PENDING.value)
         if checkpoint.last_issue_id and checkpoint.last_issue_state in active_states:
-            return self._handle_existing_issue(checkpoint.last_issue_id, checkpoint.last_updated_datetime)
+            context = self._get_issue_context(checkpoint)
+            if context is None:
+                return "", 0
+            return self._handle_existing_issue(context, checkpoint.last_updated_datetime)
 
         if not checkpoint.last_issue_id:
             return self._handle_new_issue(config)
@@ -186,15 +184,10 @@ class HookHandler:
 
     def _handle_existing_issue(
         self,
-        issue_id: str,
+        context: tuple[str, str, int],
         last_updated: str | None,
     ) -> tuple[str, int]:
-        parts = _extract_issue_parts(issue_id)
-        if parts is None:
-            logger.warning("Cannot parse issue ID: %s", issue_id)
-            return "", 0
-
-        owner, repo, issue_number = parts
+        owner, repo, issue_number = context
         issue = self.client.get_issue_details(owner, repo, issue_number)
 
         if last_updated and issue.updated_at <= last_updated:
@@ -236,7 +229,9 @@ class HookHandler:
         # NOTE: Exit code 2 feeds stderr to Claude as an error message.
         # We use this to instruct Claude to run /checkpoint and stop.
         cwd = Path(input_data.cwd)
-        context = self._get_issue_context(cwd)
+        if load_project_config(cwd) is None:
+            return "", 0
+        context = self._get_issue_context(parse_checkpoint(cwd))
         if context is None:
             return "", 0
 
@@ -252,7 +247,9 @@ class HookHandler:
 
     def handle_stop(self, input_data: StopHookInput) -> tuple[str, int]:
         cwd = Path(input_data.cwd)
-        context = self._get_issue_context(cwd)
+        if load_project_config(cwd) is None:
+            return "", 0
+        context = self._get_issue_context(parse_checkpoint(cwd))
         if context is None:
             return "", 0
 

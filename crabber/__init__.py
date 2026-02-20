@@ -3,12 +3,13 @@ import sys
 from importlib.metadata import version
 from logging.handlers import RotatingFileHandler
 
-from crabber.settings import LOG_BACKUP_COUNT, LOG_DIR, LOG_FILE, LOG_MAX_BYTES
+from crabber.settings import LOG_BACKUP_COUNT, LOG_DIR, LOG_FILE, LOG_LEVEL, LOG_MAX_BYTES
 
 __version__ = version("crabber")
 
 LOG_FORMAT = "%(asctime)s [%(levelname)s] (%(name)s) %(funcName)s: %(message)s"
-logging.basicConfig(stream=sys.stderr, level=logging.DEBUG, force=True, format=LOG_FORMAT)
+_log_level = getattr(logging, LOG_LEVEL, logging.DEBUG)
+logging.basicConfig(stream=sys.stderr, level=_log_level, force=True, format=LOG_FORMAT)
 
 # Rotating file handler for persistent logs
 LOG_DIR.mkdir(parents=True, exist_ok=True)

@@ -183,19 +183,25 @@ class TestHandleSessionStart(TestCase):
 
 
 class TestHandleNotification(TestCase):
-    def test_posts_comment(self):
+    @patch("crabber.functions.parse_checkpoint")
+    @patch("crabber.functions.load_project_config")
+    def test_posts_comment(self, mock_load_config, mock_parse_checkpoint):
+        mock_load_config.return_value = GithubProjectConfig(**SAMPLE_CONFIG)
+        mock_parse_checkpoint.return_value = Checkpoint(
+            last_issue_id="https://github.com/org/repo/issues/10",
+            last_issue_state="ON_GOING",
+        )
         mock_client = MagicMock()
         handler = HookHandler(mock_client)
 
-        with patch.object(handler, "_get_issue_context", return_value=("org", "repo", 10)):
-            input_data = NotificationHookInput(
-                session_id="test",
-                cwd="/tmp/test",
-                hook_event_name="Notification",
-                title="Test Title",
-                message="Test Message",
-            )
-            output, exit_code = handler.handle_notification(input_data)
+        input_data = NotificationHookInput(
+            session_id="test",
+            cwd="/tmp/test",
+            hook_event_name="Notification",
+            title="Test Title",
+            message="Test Message",
+        )
+        output, exit_code = handler.handle_notification(input_data)
 
         assert exit_code == 2
         assert "Run the /checkpoint command" in output
@@ -206,15 +212,14 @@ class TestHandleNotification(TestCase):
     def test_no_config_skips(self):
         handler = HookHandler(MagicMock())
 
-        with patch.object(handler, "_get_issue_context", return_value=None):
-            input_data = NotificationHookInput(
-                session_id="test",
-                cwd="/tmp/no_config_xyz",
-                hook_event_name="Notification",
-                title="Title",
-                message="Msg",
-            )
-            output, exit_code = handler.handle_notification(input_data)
+        input_data = NotificationHookInput(
+            session_id="test",
+            cwd="/tmp/no_config_xyz",
+            hook_event_name="Notification",
+            title="Title",
+            message="Msg",
+        )
+        output, exit_code = handler.handle_notification(input_data)
 
         assert exit_code == 0
         assert output == ""
@@ -222,18 +227,24 @@ class TestHandleNotification(TestCase):
 
 class TestHandleStop(TestCase):
     @patch("crabber.functions._spawn_kill_process")
-    def test_posts_stop_comment_and_spawns_kill(self, mock_spawn):
+    @patch("crabber.functions.parse_checkpoint")
+    @patch("crabber.functions.load_project_config")
+    def test_posts_stop_comment_and_spawns_kill(self, mock_load_config, mock_parse_checkpoint, mock_spawn):
+        mock_load_config.return_value = GithubProjectConfig(**SAMPLE_CONFIG)
+        mock_parse_checkpoint.return_value = Checkpoint(
+            last_issue_id="https://github.com/org/repo/issues/10",
+            last_issue_state="ON_GOING",
+        )
         mock_client = MagicMock()
         handler = HookHandler(mock_client)
 
-        with patch.object(handler, "_get_issue_context", return_value=("org", "repo", 10)):
-            input_data = StopHookInput(
-                session_id="test",
-                cwd="/tmp/test",
-                hook_event_name="Stop",
-                stopReason="user_request",
-            )
-            output, exit_code = handler.handle_stop(input_data)
+        input_data = StopHookInput(
+            session_id="test",
+            cwd="/tmp/test",
+            hook_event_name="Stop",
+            stopReason="user_request",
+        )
+        output, exit_code = handler.handle_stop(input_data)
 
         assert exit_code == 0
         mock_client.post_issue_comment.assert_called_once()

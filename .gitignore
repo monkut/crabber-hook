@@ -225,3 +225,4 @@ cache/
 output/
 notebooks/*.jpg
 CLAUDE.md
+CHECKPOINT.md
