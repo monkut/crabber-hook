@@ -27,7 +27,7 @@ dependencies = [
 crabber = "crabber.cli:main"
 
 [project.urls]
-Repository = "https://github.com/kiconiaworks/crabber-hook"
+Repository = "https://github.com/monkut/crabber-hook"
 
 [dependency-groups]
 dev = [
@@ -45,6 +45,9 @@ build-backend = "setuptools.build_meta"
 where = ["."]  # list of folders that contain the packages (["."] by default)
 include = ["crabber*"]  # package names should match these glob patterns (["*"] by default)
 exclude = []  # exclude packages matching these glob patterns (empty by default)
+
+[tool.setuptools.package-data]
+crabber = ["commands/**/*"]
 
 # Task runner
 [tool.poe.tasks]
