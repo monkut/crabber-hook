@@ -61,7 +61,7 @@ class TestParseProjectState(TestCase):
     def test_parse_with_values(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            state_file = tmp_path / "CURRENT_PROJECT_STATE.md"
+            state_file = tmp_path / "CHECKPOINT.md"
             state_file.write_text(
                 "# Project State\n"
                 "LAST_ISSUE_ID = https://github.com/org/repo/issues/123\n"
@@ -78,7 +78,7 @@ class TestParseProjectState(TestCase):
     def test_parse_with_colon_separator(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            state_file = tmp_path / "CURRENT_PROJECT_STATE.md"
+            state_file = tmp_path / "CHECKPOINT.md"
             state_file.write_text("LAST_ISSUE_ID: https://github.com/org/repo/issues/99\n")
 
             result = parse_project_state(tmp_path)

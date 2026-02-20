@@ -19,9 +19,9 @@ github org projects v2 url structure: https://github.com/orgs/ORG_NAME/projects/
         "in-review-task-column": "{COLUMN_NAME}",
     }
 
-## CURRENT_PROJECT_STATE.md format
+## CHECKPOINT.md format
 
-The CURRENT_PROJECT_STATE.md is a free form format.  Do a regex search for a pattern meeting the expected fields.
+The CHECKPOINT.md is a free form format.  Do a regex search for a pattern meeting the expected fields.
 
 
 ## Hooks
@@ -35,7 +35,7 @@ Using the `cwd` value, crabber looks for the `github_project_config.json` in the
 > LAST_ISSUE_STATE=(ON_GOING|COMPLETED|PENDING)
 
 If `github_project_config.json` is found, it is loaded, and the following is performed:
-- `CURRENT_PROJECT_STATE.md` is searched for LAST_ISSUE_ID and LAST_ISSUE_STATE.
+- `CHECKPOINT.md` is searched for LAST_ISSUE_ID and LAST_ISSUE_STATE.
     - if LAST_ISSUE_ID found AND LAST_ISSUE_STATE is ON_GOING or PENDING, get latest status of the related issue and compare to the LAST_UPDATED_DATETIME value.  IF current ISSUE updated datetime is newer, summurize the  full issue content, and add the lastest comment using the following template, return exit code 0:
     
         ```

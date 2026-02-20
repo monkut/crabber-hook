@@ -100,7 +100,7 @@ def load_project_config(cwd: Path) -> GithubProjectConfig | None:
 
 
 def parse_project_state(cwd: Path) -> ProjectState:
-    state_path = cwd / "CURRENT_PROJECT_STATE.md"
+    state_path = cwd / "CHECKPOINT.md"
     if not state_path.is_file():
         return ProjectState()
 
@@ -216,6 +216,11 @@ def _handle_new_issue(client: GitHubClient, config: GithubProjectConfig) -> tupl
 
 
 def handle_notification(input_data: NotificationHookInput) -> tuple[str, int]:
+    # REVIEW: Exit code 2 on Notification hooks does NOT block Claude — it only
+    # displays stderr to the user. To actually block Claude and wait for a GitHub
+    # comment reply, the polling logic would need to run inside a hook that supports
+    # blocking (e.g., Stop or PreToolUse), or the hook process itself must block
+    # synchronously before returning.
     cwd = Path(input_data.cwd)
     context = _get_issue_context(cwd)
     if context is None:
