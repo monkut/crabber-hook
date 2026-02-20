@@ -8,7 +8,7 @@ Crabber provides argparse subcommands for each Claude Code hook event. Each comm
 
 ### Supported Hooks
 
-- **`session-start`** — On session start, loads `github_project_config.json` from the working directory. If an ongoing issue exists in `CURRENT_PROJECT_STATE.md`, fetches updates and injects the latest comment into Claude's context. If no current issue, picks the top item from the awaiting column.
+- **`session-start`** — On session start, loads `github_project_config.json` from the working directory. If an ongoing issue exists in `CHECKPOINT.md`, fetches updates and injects the latest comment into Claude's context. If no current issue, picks the top item from the awaiting column.
 - **`notification`** — Posts the notification message and title as a comment on the current GitHub issue.
 - **`stop`** — Posts the stop reason as a comment on the current GitHub issue, then spawns a background process to terminate the parent Claude process after a delay.
 
@@ -74,24 +74,42 @@ Or create the file manually in your project root:
 
 ### Claude Code Hook Configuration
 
-Add the following to your `.claude/hooks.json` (or equivalent):
+Add the following `hooks` key to your project-level `.claude/settings.json` (shared/committed) or `.claude/settings.local.json` (local only):
 
 ```json
 {
     "hooks": {
         "SessionStart": [
             {
-                "command": "crabber session-start"
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "crabber session-start"
+                    }
+                ]
             }
         ],
         "Notification": [
             {
-                "command": "crabber notification"
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "crabber notification"
+                    }
+                ]
             }
         ],
         "Stop": [
             {
-                "command": "crabber stop"
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "crabber stop"
+                    }
+                ]
             }
         ]
     }
@@ -106,9 +124,13 @@ Add the following to your `.claude/hooks.json` (or equivalent):
 | `STOP_SLEEP_SECONDS` | No | `5` | Delay in seconds before killing the parent Claude process on stop |
 | `LOG_LEVEL` | No | `DEBUG` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
 
-### CURRENT_PROJECT_STATE.md
+### Logs
 
-Crabber reads project state from a free-form `CURRENT_PROJECT_STATE.md` file via regex. The following fields are recognized:
+Crabber writes persistent logs to `~/.crabber/logs/crabber.log` using a rotating file handler (1 MB max, 3 backups). Logs are written alongside the existing stderr output.
+
+### CHECKPOINT.md
+
+Crabber reads project state from a free-form `CHECKPOINT.md` file via regex. The following fields are recognized:
 
 ```
 LAST_ISSUE_ID = https://github.com/org/repo/issues/123

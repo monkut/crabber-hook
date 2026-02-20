@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 
 # logging.basicConfig set in __init__.py
 logger = logging.getLogger()
@@ -9,6 +10,12 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper()
 if LOG_LEVEL and LOG_LEVEL in ("INFO", "ERROR", "WARNING", "DEBUG", "CRITICAL"):
     level = getattr(logging, LOG_LEVEL)
     logger.setLevel(level)
+
+# Logging — file rotation
+LOG_DIR: Path = Path.home() / ".crabber" / "logs"
+LOG_FILE: Path = LOG_DIR / "crabber.log"
+LOG_MAX_BYTES: int = 1_048_576
+LOG_BACKUP_COUNT: int = 3
 
 # GitHub API
 GITHUB_TOKEN: str | None = os.getenv("GITHUB_TOKEN")

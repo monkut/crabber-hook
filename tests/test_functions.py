@@ -5,6 +5,7 @@ from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
 from crabber.definitions import (
+    Checkpoint,
     GithubProjectConfig,
     HookInput,
     IssueComment,
@@ -12,7 +13,6 @@ from crabber.definitions import (
     NotificationHookInput,
     ProjectItem,
     ProjectItemContent,
-    ProjectState,
     StopHookInput,
 )
 from crabber.functions import (
@@ -22,7 +22,7 @@ from crabber.functions import (
     handle_session_start,
     handle_stop,
     load_project_config,
-    parse_project_state,
+    parse_checkpoint,
 )
 from crabber.settings import CONFIG_FILENAME
 
@@ -57,11 +57,11 @@ class TestLoadProjectConfig(TestCase):
             assert result is None
 
 
-class TestParseProjectState(TestCase):
+class TestParseCheckpoint(TestCase):
     def test_parse_with_values(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            state_file = tmp_path / "CURRENT_PROJECT_STATE.md"
+            state_file = tmp_path / "CHECKPOINT.md"
             state_file.write_text(
                 "# Project State\n"
                 "LAST_ISSUE_ID = https://github.com/org/repo/issues/123\n"
@@ -69,7 +69,7 @@ class TestParseProjectState(TestCase):
                 "LAST_UPDATED_DATETIME = 2025-01-01T00:00:00Z\n"
             )
 
-            result = parse_project_state(tmp_path)
+            result = parse_checkpoint(tmp_path)
 
             assert result.last_issue_id == "https://github.com/org/repo/issues/123"
             assert result.last_issue_state == "ON_GOING"
@@ -78,15 +78,15 @@ class TestParseProjectState(TestCase):
     def test_parse_with_colon_separator(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            state_file = tmp_path / "CURRENT_PROJECT_STATE.md"
+            state_file = tmp_path / "CHECKPOINT.md"
             state_file.write_text("LAST_ISSUE_ID: https://github.com/org/repo/issues/99\n")
 
-            result = parse_project_state(tmp_path)
+            result = parse_checkpoint(tmp_path)
             assert result.last_issue_id == "https://github.com/org/repo/issues/99"
 
     def test_parse_missing_file(self):
         with tempfile.TemporaryDirectory() as tmp:
-            result = parse_project_state(Path(tmp))
+            result = parse_checkpoint(Path(tmp))
             assert result.last_issue_id is None
             assert result.last_issue_state is None
             assert result.last_updated_datetime is None
@@ -101,11 +101,11 @@ class TestHandleSessionStart(TestCase):
         assert exit_code == 0
 
     @patch("crabber.functions.GitHubClient")
-    @patch("crabber.functions.parse_project_state")
+    @patch("crabber.functions.parse_checkpoint")
     @patch("crabber.functions.load_project_config")
-    def test_existing_issue_with_update(self, mock_load_config, mock_parse_state, mock_client_cls):
+    def test_existing_issue_with_update(self, mock_load_config, mock_parse_checkpoint, mock_client_cls):
         mock_load_config.return_value = GithubProjectConfig(**SAMPLE_CONFIG)
-        mock_parse_state.return_value = ProjectState(
+        mock_parse_checkpoint.return_value = Checkpoint(
             last_issue_id="https://github.com/org/repo/issues/10",
             last_issue_state="ON_GOING",
             last_updated_datetime="2025-01-01T00:00:00Z",
@@ -130,11 +130,11 @@ class TestHandleSessionStart(TestCase):
         assert "Please also fix the signup flow" in output
 
     @patch("crabber.functions.GitHubClient")
-    @patch("crabber.functions.parse_project_state")
+    @patch("crabber.functions.parse_checkpoint")
     @patch("crabber.functions.load_project_config")
-    def test_no_issue_fetches_from_column(self, mock_load_config, mock_parse_state, mock_client_cls):
+    def test_no_issue_fetches_from_column(self, mock_load_config, mock_parse_checkpoint, mock_client_cls):
         mock_load_config.return_value = GithubProjectConfig(**SAMPLE_CONFIG)
-        mock_parse_state.return_value = ProjectState()
+        mock_parse_checkpoint.return_value = Checkpoint()
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
         mock_client.get_items_for_column.return_value = [
@@ -160,11 +160,11 @@ class TestHandleSessionStart(TestCase):
         assert "Please add dark mode" in output
 
     @patch("crabber.functions.GitHubClient")
-    @patch("crabber.functions.parse_project_state")
+    @patch("crabber.functions.parse_checkpoint")
     @patch("crabber.functions.load_project_config")
-    def test_existing_issue_no_update(self, mock_load_config, mock_parse_state, mock_client_cls):
+    def test_existing_issue_no_update(self, mock_load_config, mock_parse_checkpoint, mock_client_cls):
         mock_load_config.return_value = GithubProjectConfig(**SAMPLE_CONFIG)
-        mock_parse_state.return_value = ProjectState(
+        mock_parse_checkpoint.return_value = Checkpoint(
             last_issue_id="https://github.com/org/repo/issues/10",
             last_issue_state="ON_GOING",
             last_updated_datetime="2025-12-01T00:00:00Z",
@@ -204,7 +204,7 @@ class TestHandleNotification(TestCase):
         output, exit_code = handle_notification(input_data)
 
         assert exit_code == 2
-        assert "Waiting on response" in output
+        assert "Run the /checkpoint command" in output
         mock_client.post_issue_comment.assert_called_once()
         call_args = mock_client.post_issue_comment.call_args
         comment_body = call_args[0][3]
