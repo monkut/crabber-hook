@@ -43,10 +43,11 @@ class TestBuildParser(TestCase):
             parser.parse_args([])
 
 
+@patch("crabber.cli._require_github_token", return_value=True)
 class TestCmdSessionStart(TestCase):
     @patch("crabber.cli._make_handler")
     @patch("crabber.cli._read_and_parse", return_value=HookInput(session_id="test-123", cwd="/tmp/test"))
-    def test_dispatches_to_handler(self, mock_read, mock_make_handler):
+    def test_dispatches_to_handler(self, mock_read, mock_make_handler, mock_token):
         mock_handler = MagicMock()
         mock_handler.handle_session_start.return_value = ("session output", 0)
         mock_make_handler.return_value = mock_handler
@@ -61,14 +62,14 @@ class TestCmdSessionStart(TestCase):
         mock_stdout.write.assert_called_once_with("session output")
 
     @patch("crabber.cli._read_and_parse", side_effect=SystemExit(1))
-    def test_empty_stdin_exits_one(self, mock_read):
+    def test_empty_stdin_exits_one(self, mock_read, mock_token):
         with self.assertRaises(SystemExit) as ctx:
             cmd_session_start(Namespace())
         assert ctx.exception.code == 1
 
     @patch("crabber.cli._make_handler")
     @patch("crabber.cli._read_and_parse", return_value=HookInput(session_id="test-123", cwd="/tmp/test"))
-    def test_no_output_doesnt_write(self, mock_read, mock_make_handler):
+    def test_no_output_doesnt_write(self, mock_read, mock_make_handler, mock_token):
         mock_handler = MagicMock()
         mock_handler.handle_session_start.return_value = ("", 0)
         mock_make_handler.return_value = mock_handler
@@ -82,6 +83,7 @@ class TestCmdSessionStart(TestCase):
         mock_stdout.write.assert_not_called()
 
 
+@patch("crabber.cli._require_github_token", return_value=True)
 class TestCmdNotification(TestCase):
     @patch("crabber.cli._make_handler")
     @patch(
@@ -93,7 +95,7 @@ class TestCmdNotification(TestCase):
             message="Something happened",
         ),
     )
-    def test_dispatches_to_handler(self, mock_read, mock_make_handler):
+    def test_dispatches_to_handler(self, mock_read, mock_make_handler, mock_token):
         mock_handler = MagicMock()
         mock_handler.handle_notification.return_value = ("Waiting on response.", 2)
         mock_make_handler.return_value = mock_handler
@@ -105,12 +107,13 @@ class TestCmdNotification(TestCase):
         assert ctx.exception.code == 2
 
     @patch("crabber.cli._read_and_parse", side_effect=SystemExit(1))
-    def test_empty_stdin_exits_one(self, mock_read):
+    def test_empty_stdin_exits_one(self, mock_read, mock_token):
         with self.assertRaises(SystemExit) as ctx:
             cmd_notification(Namespace())
         assert ctx.exception.code == 1
 
 
+@patch("crabber.cli._require_github_token", return_value=True)
 class TestCmdStop(TestCase):
     @patch("crabber.cli._make_handler")
     @patch(
@@ -121,7 +124,7 @@ class TestCmdStop(TestCase):
             stopReason="user_request",
         ),
     )
-    def test_dispatches_to_handler(self, mock_read, mock_make_handler):
+    def test_dispatches_to_handler(self, mock_read, mock_make_handler, mock_token):
         mock_handler = MagicMock()
         mock_handler.handle_stop.return_value = ("", 0)
         mock_make_handler.return_value = mock_handler
@@ -133,7 +136,7 @@ class TestCmdStop(TestCase):
         assert ctx.exception.code == 0
 
     @patch("crabber.cli._read_and_parse", side_effect=SystemExit(1))
-    def test_empty_stdin_exits_one(self, mock_read):
+    def test_empty_stdin_exits_one(self, mock_read, mock_token):
         with self.assertRaises(SystemExit) as ctx:
             cmd_stop(Namespace())
         assert ctx.exception.code == 1

@@ -1,10 +1,11 @@
 import logging
 import sys
+from importlib.metadata import version
 from logging.handlers import RotatingFileHandler
 
 from crabber.settings import LOG_BACKUP_COUNT, LOG_DIR, LOG_FILE, LOG_MAX_BYTES
 
-__version__ = "0.1.0"
+__version__ = version("crabber")
 
 LOG_FORMAT = "%(asctime)s [%(levelname)s] (%(name)s) %(funcName)s: %(message)s"
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG, force=True, format=LOG_FORMAT)

@@ -20,27 +20,39 @@ Crabber provides argparse subcommands for each Claude Code hook event. Each comm
 - [uv](https://docs.astral.sh/uv/guides/install-python/) for dependency management
 - A `GITHUB_TOKEN` environment variable with access to your GitHub organization's Projects V2
 
-### Install via uvx (recommended)
+### Install via uv (recommended)
 
-Run directly from the repository without a local clone:
+Install as a persistent CLI tool:
 
 ```bash
-uvx --from git+https://github.com/kiconiaworks/crabber-hook crabber --help
+uv tool install "crabber @ https://github.com/monkut/crabber-hook/archive/refs/tags/$(gh release view --repo monkut/crabber-hook --json tagName -q .tagName).tar.gz" --python 3.14
+```
+
+Or install directly from git:
+
+```bash
+uv tool install "crabber @ git+https://github.com/monkut/crabber-hook" --python 3.14
+```
+
+### Run with uvx (no install)
+
+Run directly without installing:
+
+```bash
+uvx --from git+https://github.com/monkut/crabber-hook --python 3.14 crabber --help
 ```
 
 Use this form in your `.claude/hooks.json` to run hooks without a local install:
 
 ```bash
-uvx --from git+https://github.com/kiconiaworks/crabber-hook crabber session-start
+uvx --from git+https://github.com/monkut/crabber-hook --python 3.14 crabber session-start
 ```
 
 ### Install from source
 
 ```bash
 uv sync
-
-# Install the `crabber` CLI command (editable/development mode)
-uv pip install -e .
+uv tool install . --python 3.14
 ```
 
 ### Project Configuration

@@ -13,6 +13,7 @@ from pydantic import BaseModel
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+from crabber import __version__
 from crabber.definitions import HookInput, NotificationHookInput, StopHookInput
 from crabber.functions import HookHandler, handle_init
 from crabber.github_client import GitHubClient
@@ -52,7 +53,17 @@ def _make_handler() -> HookHandler:
     return HookHandler(GitHubClient())
 
 
+def _require_github_token() -> bool:
+    """Check if GITHUB_TOKEN is set. Log warning and return False if missing."""
+    if not os.getenv("GITHUB_TOKEN"):
+        logger.warning("GITHUB_TOKEN not set, skipping hook")
+        return False
+    return True
+
+
 def cmd_session_start(_args: argparse.Namespace) -> None:
+    if not _require_github_token():
+        sys.exit(0)
     input_data = _read_and_parse(HookInput)
     handler = _make_handler()
     output, exit_code = handler.handle_session_start(input_data)
@@ -60,6 +71,8 @@ def cmd_session_start(_args: argparse.Namespace) -> None:
 
 
 def cmd_notification(_args: argparse.Namespace) -> None:
+    if not _require_github_token():
+        sys.exit(0)
     input_data = _read_and_parse(NotificationHookInput)
     handler = _make_handler()
     output, exit_code = handler.handle_notification(input_data)
@@ -70,6 +83,8 @@ def cmd_notification(_args: argparse.Namespace) -> None:
 
 
 def cmd_stop(_args: argparse.Namespace) -> None:
+    if not _require_github_token():
+        sys.exit(0)
     input_data = _read_and_parse(StopHookInput)
     handler = _make_handler()
     output, exit_code = handler.handle_stop(input_data)
@@ -85,6 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="crabber",
         description="Claude Code hook dispatcher for GitHub Projects V2",
     )
+    parser.add_argument("--version", action="version", version=f"crabber {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     sp_session = subparsers.add_parser("session-start", help="Handle SessionStart hook")
@@ -106,8 +122,6 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command != "init" and not os.getenv("GITHUB_TOKEN"):
-        parser.error("GITHUB_TOKEN environment variable is required")
     args.func(args)
     return 0
 
